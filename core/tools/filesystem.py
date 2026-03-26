@@ -5,6 +5,7 @@ Provides read, write, diff-based edit, search, and directory listing.
 All operations are sandboxed via utils.resolve_and_validate_path().
 """
 
+import fnmatch
 import logging
 import os
 import re
@@ -240,14 +241,15 @@ async def search_files(
         if not file_path.is_file():
             continue
 
-        # Name match
+        # Name match: use fnmatch for glob patterns, substring for plain text
         name = file_path.name
-        name_match = (
-            re.search(re.escape(pattern.replace("*", "\x00").replace("?", "\x01"))
-                      .replace(r"\x00", ".*").replace(r"\x01", "."), name, flag)
-            or (not any(c in pattern for c in "*?") and
-                (pattern.lower() in name.lower() if not case_sensitive else pattern in name))
-        )
+        if any(c in pattern for c in "*?["):
+            # Glob pattern
+            name_match = fnmatch.fnmatch(name.lower() if not case_sensitive else name,
+                                         pattern.lower() if not case_sensitive else pattern)
+        else:
+            # Plain substring match
+            name_match = (pattern.lower() in name.lower()) if not case_sensitive else (pattern in name)
 
         if not name_match:
             continue
