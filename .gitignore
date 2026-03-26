@@ -51,3 +51,6 @@ config/local_security_config.yaml
 # Dev helper scripts (local only) 
 _*.bat 
 _*.py 
+
+# HANA credentials — NUNCA subir al repo
+config/hana_config.yaml

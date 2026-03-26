@@ -29,6 +29,16 @@ from core.tools.process_sessions import (
     list_sessions,
     force_terminate,
 )
+from core.tools.hana import (
+    hana_test_connection,
+    hana_execute_query,
+    hana_execute_ddl,
+    hana_list_schemas,
+    hana_list_tables,
+    hana_describe_table,
+    hana_get_row_count,
+    hana_get_system_info,
+)
 from core.tools.terminal import (
     execute_command,
     execute_command_streaming,
@@ -94,6 +104,18 @@ mcp.tool()(read_process_output)
 mcp.tool()(interact_with_process)
 mcp.tool()(list_sessions)
 mcp.tool()(force_terminate)
+
+# ---------------------------------------------------------------------------
+# Register tools - SAP HANA Cloud
+# ---------------------------------------------------------------------------
+mcp.tool()(hana_test_connection)
+mcp.tool()(hana_execute_query)
+mcp.tool()(hana_execute_ddl)
+mcp.tool()(hana_list_schemas)
+mcp.tool()(hana_list_tables)
+mcp.tool()(hana_describe_table)
+mcp.tool()(hana_get_row_count)
+mcp.tool()(hana_get_system_info)
 
 
 def get_server() -> FastMCP:
