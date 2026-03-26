@@ -47,3 +47,7 @@ desktop.ini
 
 # Project-specific: never commit local config overrides
 config/local_security_config.yaml
+ 
+# Dev helper scripts (local only) 
+_*.bat 
+_*.py 
