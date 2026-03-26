@@ -66,10 +66,17 @@ def main() -> None:
 
     if args.http:
         logger.info("Starting DesktopCommanderPy on http://%s:%d (SSE)", args.host, args.port)
-        mcp.run(transport="sse", host=args.host, port=args.port)
+        # show_banner=False: FastMCP prints an ASCII banner to stdout by default.
+        # In HTTP/SSE mode this is harmless, but we suppress it for clean logs.
+        mcp.run(transport="sse", host=args.host, port=args.port, show_banner=False)
     else:
         logger.info("Starting DesktopCommanderPy on stdio")
-        mcp.run(transport="stdio")
+        # CRITICAL: show_banner=False is mandatory for stdio transport.
+        # Claude Desktop communicates via JSON-RPC over stdout. Any non-JSON
+        # output (including FastMCP's ASCII banner) will corrupt the channel,
+        # causing Claude Desktop to hang or fail to connect entirely.
+        # DO NOT remove this flag.
+        mcp.run(transport="stdio", show_banner=False)
 
 
 if __name__ == "__main__":

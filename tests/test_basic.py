@@ -138,3 +138,80 @@ class TestFilesystemTools:
         info = await fs_module.get_file_info(str(target))
         assert "File" in info
         assert "info_test.txt" in info
+
+
+# ---------------------------------------------------------------------------
+# Stdio transport integrity test
+# ---------------------------------------------------------------------------
+
+class TestStdioTransport:
+    """
+    Ensures the MCP server never emits non-JSON-RPC content to stdout.
+
+    Background: FastMCP prints an ASCII banner to stdout by default.
+    Claude Desktop speaks strict JSON-RPC over stdout; any extraneous
+    output corrupts the channel and causes the app to hang or fail to
+    connect. This test guards against that regression.
+    """
+
+    def test_server_stdout_is_clean_on_startup(self, tmp_path: Path):
+        """Launch the server process and assert stdout has no banner/garbage."""
+        import json
+        import subprocess
+        import sys
+        import time
+
+        python = sys.executable  # use same venv python running pytest
+        main_py = Path(__file__).parent.parent / "main.py"
+
+        proc = subprocess.Popen(
+            [python, str(main_py)],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+        )
+
+        # Send a minimal JSON-RPC initialize request
+        init_msg = json.dumps({
+            "jsonrpc": "2.0", "id": 1, "method": "initialize",
+            "params": {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "clientInfo": {"name": "pytest", "version": "0.0"}
+            }
+        }) + "\n"
+
+        proc.stdin.write(init_msg)
+        proc.stdin.flush()
+
+        # Read the first line of stdout — must be valid JSON, nothing else
+        proc.stdout._CHUNK_SIZE = 1
+        deadline = time.time() + 5
+        first_line = ""
+        while time.time() < deadline:
+            ch = proc.stdout.read(1)
+            if not ch:
+                break
+            first_line += ch
+            if first_line.endswith("\n"):
+                break
+
+        proc.terminate()
+        proc.wait(timeout=3)
+
+        assert first_line.strip(), "Server produced no output on stdout — check if it started"
+
+        # The very first byte must open a JSON object, not an ASCII banner
+        stripped = first_line.strip()
+        assert stripped.startswith("{"), (
+            f"stdout is not clean JSON. First line was:\n{stripped!r}\n"
+            "This means FastMCP is printing a banner to stdout, which will "
+            "break Claude Desktop. Ensure mcp.run(..., show_banner=False) is set."
+        )
+
+        # Validate it's actually parseable JSON-RPC
+        parsed = json.loads(stripped)
+        assert parsed.get("jsonrpc") == "2.0", "Response is not JSON-RPC 2.0"
+        assert "result" in parsed, "Expected 'result' in initialize response"
