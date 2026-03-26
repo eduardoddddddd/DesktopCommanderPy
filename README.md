@@ -4,18 +4,40 @@
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://python.org)
 [![MCP](https://img.shields.io/badge/protocol-MCP-green.svg)](https://modelcontextprotocol.io)
+[![FastMCP](https://img.shields.io/badge/fastmcp-3.1.1-orange.svg)](https://github.com/jlowin/fastmcp)
+[![Tests](https://img.shields.io/badge/tests-15%2F15%20passing-brightgreen.svg)]()
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ## What is this?
 
-**DesktopCommanderPy** is a fully custom [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server written in Python that gives Claude (or any MCP-compatible AI) controlled access to your local machine: filesystem, terminal, and process management.
+**DesktopCommanderPy** is a fully custom [Model Context Protocol (MCP)](https://modelcontextprotocol.io)
+server written in Python that gives Claude (or any MCP-compatible AI) controlled access to your
+local machine: filesystem, terminal, and process management.
 
-Built as a personal alternative to [Desktop Commander](https://github.com/wonderwhy-er/DesktopCommanderMCP), this project prioritizes:
+Built as a personal alternative to [Desktop Commander](https://github.com/wonderwhy-er/DesktopCommanderMCP),
+this project prioritizes:
 
 - **Security first** — path sandbox, command blacklist, extension restrictions
 - **Full ownership** — you read and control every line of code
 - **Extensibility** — clean module structure, easy to add new tools
 - **Cross-platform** — Windows (PowerShell) primary, Linux/macOS ready
+
+---
+
+## Status
+
+| Component | Status |
+|-----------|--------|
+| Tests | ✅ 15/15 passing |
+| Claude Desktop integration | ✅ Connected (verified 2026-03-26) |
+| FastMCP version | 3.1.1 |
+| Protocol | MCP 2025-11-25 |
+| Platform tested | Windows 11 / Python 3.12 |
+
+> **Known gotcha:** FastMCP prints an ASCII banner to stdout by default.
+> Claude Desktop speaks strict JSON-RPC over stdout — any non-JSON output corrupts the channel
+> and causes the app to hang. Always use `mcp.run(..., show_banner=False)` for stdio transport.
+> This is enforced in `main.py` and tested in `TestStdioTransport`.
 
 ---
 
@@ -30,12 +52,12 @@ DesktopCommanderPy/
 ├── core/
 │   ├── server.py               # FastMCP instance + tool registration
 │   └── tools/
-│       ├── filesystem.py       # read, write, edit, search, list, info
-│       ├── terminal.py         # execute_command, execute_command_streaming
-│       ├── process.py          # list_processes, kill_process
+│       ├── filesystem.py       # read/write/edit_diff/list/search/get_info
+│       ├── terminal.py         # execute_command + streaming
+│       ├── process.py          # list_processes + kill_process
 │       └── utils.py            # Security helpers, config loader, platform
 └── tests/
-    └── test_basic.py           # pytest suite
+    └── test_basic.py           # 15 tests: security, filesystem, stdio integrity
 ```
 
 ---
@@ -47,22 +69,14 @@ DesktopCommanderPy/
 - Python 3.11 or 3.12
 - [uv](https://docs.astral.sh/uv/) (recommended) or pip
 
-### With uv (recommended)
-
-```powershell
-cd C:\Users\Edu\DesktopCommanderPy
-uv venv
-.venv\Scripts\activate
-uv pip install -e ".[dev]"
-```
-
 ### With pip
 
 ```powershell
 cd C:\Users\Edu\DesktopCommanderPy
-python -m venv .venv
+py -3.12 -m venv .venv
 .venv\Scripts\activate
-pip install -e ".[dev]"
+pip install -e .
+pip install pytest pytest-asyncio  # for running tests
 ```
 
 ---
@@ -79,34 +93,30 @@ security:
   blocked_commands:
     - "format"
     - "diskpart"
-    # ... see full list in the file
 ```
 
-> ⚠️ **If `allowed_directories` is empty, the sandbox is disabled (dev mode).**  
-> Always add your directories before using in production.
+> ⚠️ **If `allowed_directories` is empty, the sandbox is disabled (dev mode).**
 
 ---
 
 ## Running the server
 
-### stdio mode (for Claude Desktop — default)
-
 ```powershell
-python main.py
-```
+# stdio mode (Claude Desktop)
+py main.py
 
-### HTTP/SSE mode (for remote clients or testing)
+# HTTP/SSE mode (remote clients, Gemini CLI, etc.)
+py main.py --http --port 8080
 
-```powershell
-python main.py --http --port 8080
+# Debug mode
+py main.py --log-level DEBUG
 ```
 
 ---
 
 ## Configuring in Claude Desktop
 
-Add this to your `claude_desktop_config.json`  
-(usually at `%APPDATA%\Claude\claude_desktop_config.json`):
+Edit `%APPDATA%\Claude\claude_desktop_config.json`:
 
 ```json
 {
@@ -115,14 +125,13 @@ Add this to your `claude_desktop_config.json`
       "command": "C:\\Users\\Edu\\DesktopCommanderPy\\.venv\\Scripts\\python.exe",
       "args": ["C:\\Users\\Edu\\DesktopCommanderPy\\main.py"],
       "env": {
-        "PYTHONUTF8": "1"
+        "PYTHONUTF8": "1",
+        "PYTHONIOENCODING": "utf-8"
       }
     }
   }
 }
 ```
-
-Restart Claude Desktop after saving the config.
 
 ---
 
@@ -146,21 +155,8 @@ Restart Claude Desktop after saving the config.
 ## Running Tests
 
 ```powershell
-pytest tests/ -v
+.venv\Scripts\pytest tests/ -v
 ```
-
----
-
-## Collaborating with Multiple AIs
-
-This server is designed to work with **any MCP-compatible client**:
-
-- **Claude Desktop** — primary use case (stdio transport)
-- **Gemini CLI** — configure in MCP settings, use HTTP transport
-- **Custom agents** — point any MCP client at `http://127.0.0.1:8080`
-
-For multi-AI setups, run the server in HTTP mode and configure each
-client to connect to the same endpoint.
 
 ---
 
@@ -168,10 +164,10 @@ client to connect to the same endpoint.
 
 - [ ] `create_directory` tool
 - [ ] Clipboard read/write tool
-- [ ] Audit log (every operation logged with timestamp + caller)
+- [ ] Audit log (every operation logged with timestamp)
 - [ ] Per-tool directory restrictions
-- [ ] Android/iOS companion via HTTP transport
-- [ ] SAP-specific tools (RFC calls, transport management)
+- [ ] HTTP mode auth token for multi-AI setups
+- [ ] SAP-specific tools (RFC ping, transport list)
 
 ---
 

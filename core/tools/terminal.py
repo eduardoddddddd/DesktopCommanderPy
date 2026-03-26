@@ -77,6 +77,7 @@ async def execute_command(
     try:
         proc = await asyncio.create_subprocess_exec(
             *shell_args, command,
+            stdin=asyncio.subprocess.DEVNULL,   # prevent child from inheriting MCP stdin
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,  # merge stderr into stdout
             cwd=cwd,
@@ -140,6 +141,7 @@ async def execute_command_streaming(
     try:
         proc = await asyncio.create_subprocess_exec(
             *shell_args, command,
+            stdin=asyncio.subprocess.DEVNULL,   # prevent child from inheriting MCP stdin
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
             cwd=cwd,
