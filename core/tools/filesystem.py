@@ -322,3 +322,80 @@ async def get_file_info(
             info_lines.append("(binary file — no preview)")
 
     return "\n".join(info_lines)
+
+
+# ---------------------------------------------------------------------------
+# create_directory
+# ---------------------------------------------------------------------------
+
+async def create_directory(
+    path: Annotated[str, "Ruta absoluta del directorio a crear. Se crean directorios intermedios automáticamente."],
+) -> str:
+    """Crea un directorio (y todos los intermedios necesarios).
+
+    Equivale a mkdir -p. Si el directorio ya existe, no falla.
+    La ruta debe estar dentro de los directorios permitidos.
+    """
+    resolved = resolve_and_validate_path(path, _allowed())
+    resolved.mkdir(parents=True, exist_ok=True)
+    return f"Directorio creado: '{resolved}'"
+
+
+# ---------------------------------------------------------------------------
+# move_file
+# ---------------------------------------------------------------------------
+
+async def move_file(
+    source: Annotated[str, "Ruta absoluta del fichero o directorio origen."],
+    destination: Annotated[str, "Ruta absoluta del destino. Si es directorio, mueve dentro de él."],
+) -> str:
+    """Mueve o renombra un fichero o directorio.
+
+    Funciona entre rutas dentro de los directorios permitidos.
+    Si el destino es un directorio existente, mueve el origen dentro de él.
+    Si el destino no existe, renombra el origen a ese nombre.
+    """
+    import shutil
+
+    src = resolve_and_validate_path(source, _allowed())
+    dst = resolve_and_validate_path(destination, _allowed())
+
+    if not src.exists():
+        raise FileNotFoundError(f"Origen no existe: '{src}'")
+
+    result_path = shutil.move(str(src), str(dst))
+    return f"Movido: '{src}' → '{result_path}'"
+
+
+# ---------------------------------------------------------------------------
+# read_multiple_files
+# ---------------------------------------------------------------------------
+
+async def read_multiple_files(
+    paths: Annotated[list[str], "Lista de rutas absolutas a leer."],
+    max_lines_each: Annotated[int, "Máximo de líneas por fichero. Default 200."] = 200,
+) -> str:
+    """Lee varios ficheros de texto en una sola llamada.
+
+    Útil para comparar ficheros o cargar múltiples módulos de una vez.
+    Devuelve el contenido de cada fichero separado por cabeceras claras.
+    """
+    results: list[str] = []
+
+    for p in paths:
+        try:
+            resolved = resolve_and_validate_path(p, _allowed())
+            with open(resolved, "r", encoding="utf-8", errors="replace") as f:
+                lines = f.readlines()
+            total = len(lines)
+            content = "".join(lines[:max_lines_each])
+            truncated = f"\n[... {total - max_lines_each} líneas más ...]" if total > max_lines_each else ""
+            results.append(f"{'='*60}\n# {resolved}\n{'='*60}\n{content.rstrip()}{truncated}")
+        except PermissionError as e:
+            results.append(f"{'='*60}\n# {p}\n{'='*60}\n[ACCESO DENEGADO: {e}]")
+        except FileNotFoundError:
+            results.append(f"{'='*60}\n# {p}\n{'='*60}\n[FICHERO NO ENCONTRADO]")
+        except Exception as e:
+            results.append(f"{'='*60}\n# {p}\n{'='*60}\n[ERROR: {e}]")
+
+    return "\n\n".join(results)

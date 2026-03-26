@@ -18,6 +18,16 @@ from core.tools.filesystem import (
     edit_file_diff,
     list_directory,
     get_file_info,
+    create_directory,
+    move_file,
+    read_multiple_files,
+)
+from core.tools.process_sessions import (
+    start_process,
+    read_process_output,
+    interact_with_process,
+    list_sessions,
+    force_terminate,
 )
 from core.tools.terminal import (
     execute_command,
@@ -60,6 +70,9 @@ mcp.tool()(search_files)
 mcp.tool()(edit_file_diff)
 mcp.tool()(list_directory)
 mcp.tool()(get_file_info)
+mcp.tool()(create_directory)
+mcp.tool()(move_file)
+mcp.tool()(read_multiple_files)
 
 # ---------------------------------------------------------------------------
 # Register tools - terminal
@@ -68,10 +81,19 @@ mcp.tool()(execute_command)
 mcp.tool()(execute_command_streaming)
 
 # ---------------------------------------------------------------------------
-# Register tools - process management
+# Register tools - process management (single-shot)
 # ---------------------------------------------------------------------------
 mcp.tool()(list_processes)
 mcp.tool()(kill_process)
+
+# ---------------------------------------------------------------------------
+# Register tools - process sessions (stateful / interactive)
+# ---------------------------------------------------------------------------
+mcp.tool()(start_process)
+mcp.tool()(read_process_output)
+mcp.tool()(interact_with_process)
+mcp.tool()(list_sessions)
+mcp.tool()(force_terminate)
 
 
 def get_server() -> FastMCP:
