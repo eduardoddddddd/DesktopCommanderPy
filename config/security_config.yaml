@@ -10,8 +10,13 @@ security:
     - "C:/Users/Edu/Desktop"
     - "C:/Users/Edu/Downloads"
     - "C:/Users/Edu/Documents/ClaudeWork"
-    # Add more paths as needed:
-    # - "C:/projects"
+    - "C:/Users/Edu/DesktopCommanderPy"
+    - "C:/Users/Edu/VerbaSant"
+    - "C:/Users/Edu/AstroExtracto"
+    - "C:/Users/Edu/AstroCompendium"
+    - "C:/Users/Edu/MetaAstrum"
+    - "C:/Users/Edu/VTTs"
+    - "C:/Users/Edu/astro_cartas"
 
   # Shell commands that are NEVER executed, regardless of context.
   # Case-insensitive matching. Add partial names to block whole families.

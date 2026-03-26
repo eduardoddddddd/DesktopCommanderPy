@@ -37,6 +37,10 @@ dev = [
 
 [project.scripts]
 desktopcommanderpy = "main:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["core"]
+include = ["main.py", "core/**", "config/**"]
 [tool.ruff]
 line-length = 100
 target-version = "py311"
