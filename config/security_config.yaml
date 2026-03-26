@@ -1,0 +1,86 @@
+# DesktopCommanderPy - Security Configuration
+# Edit this file to customize allowed paths and blocked commands.
+# All paths use forward slashes or backslashes (normalized internally).
+
+security:
+  # Directories where filesystem tools are allowed to operate.
+  # Add absolute paths. Subdirectories are also allowed automatically.
+  allowed_directories:
+    - "C:/Users/Edu/Documents"
+    - "C:/Users/Edu/Desktop"
+    - "C:/Users/Edu/Downloads"
+    - "C:/Users/Edu/Documents/ClaudeWork"
+    # Add more paths as needed:
+    # - "C:/projects"
+
+  # Shell commands that are NEVER executed, regardless of context.
+  # Case-insensitive matching. Add partial names to block whole families.
+  blocked_commands:
+    # Disk/partition operations
+    - "format"
+    - "diskpart"
+    - "fdisk"
+    - "dd"
+    # User/permission management
+    - "net user"
+    - "net localgroup"
+    - "icacls"
+    - "takeown"
+    - "runas"
+    # System/registry
+    - "reg add"
+    - "reg delete"
+    - "regedit"
+    - "bcdedit"
+    - "sfc"
+    # Network/firewall
+    - "netsh"
+    - "iptables"
+    # Shutdown/reboot
+    - "shutdown"
+    - "restart-computer"
+    - "halt"
+    # Credential/security
+    - "cipher"
+    - "certutil"
+    - "mimikatz"
+  # Maximum file size allowed for read/write operations (bytes)
+  max_file_size_bytes: 10485760  # 10 MB
+
+  # Maximum number of lines returned in a single file read
+  max_read_lines: 2000
+
+  # Allowed file extensions for write operations (empty = all allowed)
+  # Uncomment and customize if you want to restrict writes:
+  # write_allowed_extensions:
+  #   - ".py"
+  #   - ".txt"
+  #   - ".yaml"
+  #   - ".json"
+  #   - ".md"
+
+  # Extensions NEVER writable regardless of directory
+  write_blocked_extensions:
+    - ".exe"
+    - ".dll"
+    - ".sys"
+    - ".bat"
+    - ".ps1"   # Remove if you need to write PowerShell scripts
+    - ".cmd"
+
+terminal:
+  # Default shell per platform (overridden by platform detection)
+  windows_shell: "powershell.exe"
+  linux_shell: "/bin/bash"
+  macos_shell: "/bin/zsh"
+
+  # Command timeout in seconds (default for all terminal tools)
+  default_timeout_seconds: 30
+
+  # Maximum output size captured from terminal commands (chars)
+  max_output_chars: 500000
+
+logging:
+  level: "INFO"   # DEBUG | INFO | WARNING | ERROR
+  log_to_file: false
+  log_file: "logs/desktopcommanderpy.log"

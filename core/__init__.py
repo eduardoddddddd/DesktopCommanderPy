@@ -1,0 +1,1 @@
+"""DesktopCommanderPy - Core package."""
