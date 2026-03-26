@@ -1,0 +1,14 @@
+# DesktopCommanderPy - Dependencias de desarrollo y testing
+# Instalación: pip install -r requirements-dev.txt
+
+-r requirements.txt
+
+# Testing
+pytest==9.0.2
+pytest-asyncio==1.3.0
+
+# Linting y formateo
+ruff==0.15.8
+
+# Type checking
+mypy==1.19.1
