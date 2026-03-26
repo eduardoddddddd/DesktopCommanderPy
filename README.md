@@ -6,6 +6,7 @@
 [![MCP](https://img.shields.io/badge/protocolo-MCP-green.svg)](https://modelcontextprotocol.io)
 [![FastMCP](https://img.shields.io/badge/fastmcp-3.1.1-orange.svg)](https://github.com/jlowin/fastmcp)
 [![Tests](https://img.shields.io/badge/tests-15%2F15%20OK-brightgreen.svg)]()
+[![Tools](https://img.shields.io/badge/tools-26-blueviolet.svg)]()
 [![Licencia: MIT](https://img.shields.io/badge/Licencia-MIT-yellow.svg)](LICENSE)
 
 ---
@@ -14,17 +15,20 @@
 
 **DesktopCommanderPy** es un servidor [Model Context Protocol (MCP)](https://modelcontextprotocol.io)
 escrito completamente en Python que da a Claude (o cualquier IA compatible con MCP) acceso
-controlado a tu máquina local: sistema de archivos, terminal, procesos bloqueantes y
-**sesiones de proceso interactivas** (REPLs, shells, scripts largos).
+controlado a tu máquina local y a tus sistemas externos.
 
-Construido como alternativa personal a [Desktop Commander](https://github.com/wonderwhy-er/DesktopCommanderMCP),
-este proyecto prioriza:
+Módulos actuales:
+- **Filesystem** — lectura, escritura, búsqueda, edición quirúrgica
+- **Terminal** — ejecución de comandos bloqueantes y streaming
+- **Procesos** — gestión con psutil y sesiones interactivas (REPLs)
+- **SAP HANA Cloud** — conexión, consultas, administración vía hdbcli
 
-- **Seguridad desde el principio** — sandbox de rutas, blacklist de comandos, restricción de extensiones
-- **Control total** — lees y controlas cada línea de código, sin dependencias ocultas
-- **Equiparable al original** — 18 tools que cubren toda la funcionalidad de Desktop Commander
-- **Extensibilidad** — estructura modular limpia, fácil añadir tools propias (SAP, astrología, etc.)
-- **Multiplataforma** — Windows (PowerShell) primario, Linux/macOS listos con detección automática
+Construido como alternativa personal a [Desktop Commander](https://github.com/wonderwhy-er/DesktopCommanderMCP):
+
+- **Control total** — cada línea de código es tuya, sin cajas negras
+- **Seguridad desde el principio** — sandbox de rutas, blacklist de comandos, credenciales por variables de entorno
+- **Extensible** — añadir un módulo nuevo es copiar un fichero y registrar las tools en server.py
+- **Multiplataforma** — Windows (PowerShell) primario, Linux/macOS con detección automática
 
 ---
 
@@ -37,8 +41,8 @@ este proyecto prioriza:
 | Protocolo MCP negociado | 2025-11-25 |
 | FastMCP | 3.1.1 |
 | Python | 3.12.10 |
-| Plataforma probada | Windows 11 |
-| Tools disponibles | **18** |
+| hdbcli (HANA) | 2.28.17 |
+| Tools disponibles | **26** |
 
 ---
 
@@ -46,40 +50,36 @@ este proyecto prioriza:
 
 ```
 DesktopCommanderPy/
-├── main.py                          # Entry point: stdio (Claude Desktop) o HTTP/SSE
+├── main.py                          # Entry point: stdio o HTTP/SSE
 ├── pyproject.toml                   # Dependencias, build con hatchling
 ├── config/
-│   └── security_config.yaml        # Sandbox: dirs permitidos, blacklist, límites
+│   ├── security_config.yaml         # Sandbox: dirs, blacklist, límites
+│   ├── hana_config.yaml             # Credenciales HANA (NO en git, ver .gitignore)
+│   └── hana_config.yaml.example     # Plantilla de configuración HANA
 ├── core/
-│   ├── server.py                    # Instancia FastMCP + registro de las 18 tools
+│   ├── server.py                    # FastMCP + registro de las 26 tools
 │   └── tools/
-│       ├── filesystem.py            # read/write/edit_diff/list/search/info/mkdir/move/multi-read
-│       ├── terminal.py              # execute_command + streaming (procesos bloqueantes)
-│       ├── process.py               # list_processes + kill_process (psutil)
-│       ├── process_sessions.py      # start/read/interact/list_sessions/force_terminate
-│       ├── session_manager.py       # SessionManager singleton con asyncio.Queue por proceso
-│       └── utils.py                 # Seguridad, config loader, detección de plataforma
+│       ├── filesystem.py            # 9 tools de sistema de archivos
+│       ├── terminal.py              # 2 tools de terminal
+│       ├── process.py               # 2 tools de procesos (psutil)
+│       ├── process_sessions.py      # 5 tools de sesiones interactivas
+│       ├── session_manager.py       # SessionManager con asyncio.Queue
+│       ├── hana.py                  # 8 tools SAP HANA Cloud
+│       └── utils.py                 # Seguridad, config, plataforma
 └── tests/
-    └── test_basic.py                # 15 tests: seguridad, filesystem, integridad stdio
+    └── test_basic.py                # 15 tests: seguridad, filesystem, stdio
 ```
 
 ---
 
 ## Instalación
 
-### Requisitos
-
-- Python 3.11 o 3.12 (recomendado 3.12)
-- pip (incluido con Python)
-- Git (para clonar y actualizar)
-
-### Pasos
-
 ```powershell
 cd C:\Users\Edu\DesktopCommanderPy
 py -3.12 -m venv .venv
 .venv\Scripts\activate
 pip install -e .
+pip install hdbcli              # módulo SAP HANA Cloud
 pip install pytest pytest-asyncio   # solo para tests
 ```
 
@@ -87,21 +87,17 @@ pip install pytest pytest-asyncio   # solo para tests
 
 ## Configuración de seguridad
 
-Edita `config/security_config.yaml` antes de usar:
+`config/security_config.yaml`:
 
 ```yaml
 security:
-  # Directorios donde el servidor puede operar (y todos sus subdirectorios)
   allowed_directories:
     - "C:/Users/Edu/Documents"
     - "C:/Users/Edu/Desktop"
-    - "C:/Users/Edu/Downloads"
-    - "C:/Users/Edu/Documents/ClaudeWork"
     - "C:/Users/Edu/DesktopCommanderPy"
     - "C:/Users/Edu/VerbaSant"
     # añadir más según necesidad
 
-  # Comandos NUNCA ejecutables, independientemente del contexto
   blocked_commands:
     - "format"
     - "diskpart"
@@ -109,15 +105,9 @@ security:
     - "reg add"
     - "reg delete"
     - "shutdown"
-    # ver lista completa en el archivo
 
-  # Extensiones nunca escribibles
-  write_blocked_extensions:
-    - ".exe"
-    - ".dll"
-    - ".sys"
-
-  max_file_size_bytes: 10485760   # 10 MB
+  write_blocked_extensions: [".exe", ".dll", ".sys"]
+  max_file_size_bytes: 10485760
   max_read_lines: 2000
 
 terminal:
@@ -125,29 +115,23 @@ terminal:
   max_output_chars: 500000
 ```
 
-> ⚠️ **Si `allowed_directories` está vacío, el sandbox está desactivado (modo dev).**
-> Configura siempre tus rutas antes de usar en producción.
+> ⚠️ **Si `allowed_directories` está vacío, el sandbox está desactivado.**
 
 ---
 
 ## Arrancar el servidor
 
 ```powershell
-# Modo stdio — para Claude Desktop (por defecto)
-py main.py
-
-# Modo HTTP/SSE — para clientes remotos, Gemini CLI, etc.
-py main.py --http --port 8080
-
-# Con nivel de log detallado
-py main.py --log-level DEBUG
+py main.py                        # stdio — Claude Desktop
+py main.py --http --port 8080     # HTTP/SSE — clientes remotos
+py main.py --log-level DEBUG      # con logs detallados
 ```
 
 ---
 
 ## Configurar en Claude Desktop
 
-Edita `%APPDATA%\Claude\claude_desktop_config.json`:
+`%APPDATA%\Claude\claude_desktop_config.json`:
 
 ```json
 {
@@ -164,66 +148,176 @@ Edita `%APPDATA%\Claude\claude_desktop_config.json`:
 }
 ```
 
-Reinicia Claude Desktop tras guardar el fichero.
+Para añadir las credenciales HANA directamente aquí (opción recomendada):
+
+```json
+"env": {
+  "PYTHONUTF8": "1",
+  "PYTHONIOENCODING": "utf-8",
+  "HANA_HOST": "tu-instancia.hanacloud.ondemand.com",
+  "HANA_PORT": "443",
+  "HANA_USER": "DBADMIN",
+  "HANA_PASSWORD": "tu_password",
+  "HANA_SCHEMA": ""
+}
+```
 
 ---
 
-## Las 18 tools MCP disponibles
+## Las 26 tools MCP disponibles
 
-### Filesystem
-
-| Tool | Descripción |
-|------|-------------|
-| `read_file` | Lee fichero de texto con paginación (offset/length). Trunca si es muy largo. |
-| `write_file` | Escribe o añade contenido a un fichero. Crea directorios intermedios. |
-| `edit_file_diff` | Edición quirúrgica por find/replace. Solo el fragmento cambiado, no el fichero entero. |
-| `list_directory` | Lista directorio con tamaños y tipos. Soporta recursivo con max_depth. |
-| `search_files` | Búsqueda por patrón glob (*.py) y/o contenido. Usa fnmatch nativo. |
-| `get_file_info` | Metadatos del fichero (tamaño, fechas, extensión) + preview primeras 10 líneas. |
-| `create_directory` | Crea directorio y todos los intermedios (equivale a mkdir -p). |
-| `move_file` | Mueve o renombra ficheros y directorios dentro del sandbox. |
-| `read_multiple_files` | Lee N ficheros en una sola llamada. Útil para comparar módulos. |
-
-### Terminal (procesos bloqueantes)
+### Filesystem (9 tools)
 
 | Tool | Descripción |
 |------|-------------|
-| `execute_command` | Ejecuta comando y devuelve stdout+stderr completo. Con timeout configurable. |
-| `execute_command_streaming` | Igual pero recoge línea a línea. Para compilaciones, pip install, etc. |
+| `read_file` | Lee fichero con paginación offset/length |
+| `write_file` | Escribe o añade contenido. Crea dirs intermedios. |
+| `edit_file_diff` | Edición quirúrgica find/replace. Solo el fragmento cambiado. |
+| `list_directory` | Lista con tamaños. Soporta recursivo con max_depth. |
+| `search_files` | Búsqueda por glob (*.py) y/o contenido. fnmatch nativo. |
+| `get_file_info` | Metadatos + preview primeras 10 líneas. |
+| `create_directory` | mkdir -p sandbox-aware. |
+| `move_file` | Mueve/renombra dentro del sandbox. |
+| `read_multiple_files` | Lee N ficheros en una llamada. |
 
-### Gestión de procesos (psutil)
+### Terminal (2 tools)
 
 | Tool | Descripción |
 |------|-------------|
-| `list_processes` | Lista procesos activos con PID, nombre, CPU%, memoria. Filtrable y ordenable. |
-| `kill_process` | Termina proceso por PID. Modo graceful (SIGTERM) o forzado (SIGKILL). |
+| `execute_command` | Ejecuta y captura stdout+stderr. Timeout configurable. |
+| `execute_command_streaming` | Recoge línea a línea. Para pip install, builds, etc. |
 
-### Sesiones de proceso interactivas ⭐
+### Gestión de procesos psutil (2 tools)
 
 | Tool | Descripción |
 |------|-------------|
-| `start_process` | Arranca un proceso con stdin PIPE. Devuelve PID + output inicial. |
-| `read_process_output` | Lee el buffer acumulado del proceso sin bloquearlo. Paginable. |
-| `interact_with_process` | Envía texto al stdin y espera respuesta. Para REPLs, shells, etc. |
-| `list_sessions` | Tabla de sesiones activas: PID, estado, tiempo activo, líneas emitidas. |
-| `force_terminate` | SIGKILL inmediato + limpia la sesión del registro interno. |
+| `list_processes` | Tabla PID/nombre/CPU%/memoria. Filtrable y ordenable. |
+| `kill_process` | SIGTERM (graceful) o SIGKILL (forzado). |
 
-### Flujo ejemplo con sesiones interactivas
+### Sesiones interactivas (5 tools) ⭐
+
+| Tool | Descripción |
+|------|-------------|
+| `start_process` | Arranca proceso con stdin PIPE. Devuelve PID + output inicial. |
+| `read_process_output` | Lee buffer acumulado sin bloquear. |
+| `interact_with_process` | Envía texto al stdin, espera respuesta. REPLs, shells. |
+| `list_sessions` | Tabla de sesiones: PID, estado, tiempo activo, líneas. |
+| `force_terminate` | SIGKILL + limpia sesión del registro. |
+
+**Flujo ejemplo — REPL Python interactivo:**
+```
+start_process("python -i")
+  → [PID 4521] Process started (running)
+
+interact_with_process(4521, "import pyswisseph as swe")
+interact_with_process(4521, "print(swe.calc_ut(2460000, 0))")
+  → ((189.43, 1.0, 0.0, ...), 0)
+
+interact_with_process(4521, "exit()")
+```
+
+### SAP HANA Cloud — hdbcli (8 tools) 🔷
+
+| Tool | Descripción |
+|------|-------------|
+| `hana_test_connection` | Verifica credenciales. Devuelve versión, usuario, schema, SSL. |
+| `hana_execute_query` | SELECT / DML / CALL con tabla formateada. Límite de filas. |
+| `hana_execute_ddl` | CREATE/ALTER/DROP. Requiere `confirm=True` explícito. |
+| `hana_list_schemas` | Schemas visibles. Marca los de sistema (_SYS*, SYS, PUBLIC). |
+| `hana_list_tables` | Tablas, vistas, Calc Views con nº columnas y tipo. |
+| `hana_describe_table` | Estructura: tipo, longitud, nullable, PK, comentario. |
+| `hana_get_row_count` | Filas de N tablas vía M_TABLE_STATISTICS (rápido, sin full scan). |
+| `hana_get_system_info` | Memoria usada/límite, conexiones activas, alertas del sistema. |
+
+---
+
+## Configurar credenciales SAP HANA Cloud
+
+Las credenciales **nunca se hardcodean en código** y `config/hana_config.yaml` está
+en `.gitignore` para que nunca lleguen a GitHub.
+
+### Opción A — Variables de entorno en claude_desktop_config.json (recomendada)
+
+Ventajas: no hay fichero de credenciales en disco, fácil de cambiar por entorno.
+
+```json
+"env": {
+  "HANA_HOST": "xxxxxxxx-xxxx.hana.trial-us10.hanacloud.ondemand.com",
+  "HANA_PORT": "443",
+  "HANA_USER": "DBADMIN",
+  "HANA_PASSWORD": "tu_password_aqui",
+  "HANA_SCHEMA": ""
+}
+```
+
+### Opción B — Fichero local config/hana_config.yaml
+
+```yaml
+hana:
+  host: "xxxxxxxx-xxxx.hana.trial-us10.hanacloud.ondemand.com"
+  port: 443
+  user: "DBADMIN"
+  password: "tu_password_aqui"
+  schema: ""
+  encrypt: true
+  sslValidateCertificate: true
+  max_rows: 200
+```
+
+Copiar la plantilla y rellenar:
+```powershell
+copy config\hana_config.yaml.example config\hana_config.yaml
+# editar hana_config.yaml con datos reales
+```
+
+### Cómo obtener el host en BTP Free Tier
+
+1. Entra en [BTP Cockpit](https://cockpit.btp.cloud.sap)
+2. Selecciona tu subaccount → **Instances and Subscriptions**
+3. Busca tu instancia **SAP HANA Cloud**
+4. Haz clic en los tres puntos → **Open in SAP HANA Database Explorer**
+5. El host está en la barra de conexión:
+   `xxxxxxxx-xxxx.hana.trial-us10.hanacloud.ondemand.com`
+   (el puerto siempre es **443** en HANA Cloud)
+
+### Verificar la conexión tras configurar
+
+Reinicia Claude Desktop y ejecuta:
+```
+hana_test_connection()
+```
+
+Respuesta esperada:
+```
+✓ Conexión exitosa a SAP HANA Cloud
+  Host:           tu-instancia.hanacloud.ondemand.com:443
+  Usuario:        DBADMIN
+  Schema actual:  DBADMIN
+  Versión HANA:   4.00.000.00.1234567890
+  Conexiones propias activas: 1
+  SSL/TLS:        activado
+```
+
+### Flujo típico de exploración
 
 ```
-1. start_process("python -i")
-   → [PID 4521] Process started (running)
-
-2. interact_with_process(4521, "import pyswisseph as swe")
-   → (sin output, Python cargó el módulo)
-
-3. interact_with_process(4521, "print(swe.calc_ut(2460000, 0))")
-   → ((189.43, 1.0, 0.0, 0.0, 0.0, 0.0), 0)
-
-4. interact_with_process(4521, "exit()")
-5. list_sessions()
-   → (sesión terminada, se limpia automáticamente)
+hana_test_connection()                           → verifica credenciales
+hana_get_system_info()                           → estado del Free Tier
+hana_list_schemas()                              → schemas disponibles
+hana_list_tables("DBADMIN")                      → tablas del schema
+hana_describe_table("MI_TABLA", "DBADMIN")       → estructura de la tabla
+hana_get_row_count("ORDERS,ITEMS,CUSTOMERS")     → filas sin full scan
+hana_execute_query("SELECT TOP 10 * FROM ORDERS") → datos
+hana_execute_ddl("CREATE TABLE TEST (ID INT)", confirm=True)
 ```
+
+### Límites del Free Tier a tener en cuenta
+
+- **Memoria:** 30 GB RAM total (monitorizeable con `hana_get_system_info`)
+- **Almacenamiento:** 120 GB disco
+- **Conexiones simultáneas:** limitadas — `hana_get_system_info` muestra el contador
+- **La instancia se para sola** si no hay actividad en un período — `hana_test_connection`
+  te dirá si está caída con un error de conexión claro
 
 ---
 
@@ -233,143 +327,117 @@ Reinicia Claude Desktop tras guardar el fichero.
 .venv\Scripts\pytest.exe tests/ -v
 ```
 
-Salida esperada:
-```
-15 passed in 1.6s
-```
+Salida esperada: `15 passed in ~1.6s`
 
-Cobertura de tests:
-- `TestPathSecurity` — sandbox de rutas (4 tests)
-- `TestCommandSecurity` — blacklist de comandos (3 tests)
-- `TestFilesystemTools` — read/write/edit/list/search/info (7 tests)
-- `TestStdioTransport` — integridad del canal JSON-RPC (1 test crítico)
+| Suite | Tests | Qué cubre |
+|-------|-------|-----------|
+| `TestPathSecurity` | 4 | Sandbox de rutas permitidas |
+| `TestCommandSecurity` | 3 | Blacklist de comandos peligrosos |
+| `TestFilesystemTools` | 7 | read/write/edit/list/search/info |
+| `TestStdioTransport` | 1 | Integridad del canal JSON-RPC (crítico) |
 
 ---
 
 ## 🐛 Bugs críticos resueltos — diario de guerra
 
-Esta sección documenta los tres problemas reales encontrados durante la integración
-con Claude Desktop. Se mantiene aquí como referencia permanente.
-
----
-
 ### Bug 1 — `spawn uv ENOENT`: Claude Desktop no arrancaba
 
-**Cuándo ocurrió:** Desde el 8 de marzo de 2026. Claude Desktop no arrancaba.
+**Período:** 8 de marzo al 26 de marzo de 2026.
 
 **Síntomas:**
-- El log `%APPDATA%\Claude\logs\mcp-server-*.log` mostraba `spawn uv ENOENT` en bucle.
-- `main1.log` registraba `Request timed out: isGuestConnected` repetidamente hasta el 26 de marzo.
-- La aplicación Claude Desktop se quedaba colgada en la pantalla de carga.
-- Más de 10 procesos de Claude bloqueados en segundo plano (detectados y cerrados por Gemini CLI).
+- `%APPDATA%\Claude\logs\mcp-server-*.log` → `spawn uv ENOENT` en bucle
+- `main1.log` → `Request timed out: isGuestConnected` repetido cada pocos segundos
+- Claude Desktop colgado en la pantalla de carga
+- Más de 10 procesos de Claude bloqueados en segundo plano (detectados por Gemini CLI)
 
 **Causa raíz:**
-El MCP oficial Desktop Commander usa `uv` (gestor de paquetes Python de Astral) para
-arrancar su entorno. `uv` no estaba instalado, o estaba instalado pero **no en el PATH
-que hereda Claude Desktop** al arrancar como aplicación de escritorio. El PATH de las
-aplicaciones de escritorio en Windows es diferente al PATH de la sesión de terminal.
+El MCP oficial Desktop Commander usa `uv` para gestionar su entorno Python.
+`uv` no estaba instalado o no estaba en el **PATH que hereda Claude Desktop al
+arrancar como aplicación de escritorio** — que es diferente al PATH de la terminal.
 
 **Solución:**
 ```powershell
-# 1. Instalar uv (script oficial de Astral)
-# Descargado y ejecutado manualmente — quedó en C:\Users\Edu\.local\bin\uv.exe
+# 1. Instalar uv (script oficial Astral)
+# → binario en C:\Users\Edu\.local\bin\uv.exe
 
-# 2. Verificar instalación
-C:\Users\Edu\.local\bin\uv.exe --version
-# uv 0.11.1
-
-# 3. Añadir al PATH de usuario del SISTEMA (no solo de la sesión)
+# 2. Añadir al PATH de usuario del SISTEMA (no solo de la sesión)
 [System.Environment]::SetEnvironmentVariable(
     "PATH",
     "C:\Users\Edu\.local\bin;" + [System.Environment]::GetEnvironmentVariable("PATH","User"),
     "User"
 )
 
-# 4. Verificar que quedó al principio del PATH
+# 3. Verificar
 [System.Environment]::GetEnvironmentVariable("PATH","User")
-# C:\Users\Edu\.local\bin;C:\Users\Edu\AppData\Local\...
+# debe empezar por: C:\Users\Edu\.local\bin;...
 
-# 5. Reiniciar Claude Desktop
+# 4. Reiniciar Claude Desktop
 ```
 
-**Verificación posterior:**
+**Verificación:**
 ```powershell
-where uv
-# C:\Users\Edu\.local\bin\uv.exe  ← correcto
+C:\Users\Edu\.local\bin\uv.exe --version
+# uv 0.11.1
 ```
 
 ---
 
 ### Bug 2 — Banner ASCII de FastMCP: Claude Desktop se colgaba al conectar
 
-**Cuándo ocurrió:** Al implementar DesktopCommanderPy por primera vez.
-
 **Síntomas:**
-- Claude Desktop arrancaba pero se quedaba colgado sin terminar de conectar al MCP.
-- El log mostraba que el proceso del servidor arrancaba, pero Claude nunca recibía
-  la respuesta de `initialize`.
-- Detectado y diagnosticado por **Gemini CLI** al analizar los logs.
+- Claude Desktop arrancaba pero nunca terminaba de inicializar el MCP propio
+- El servidor arrancaba (visible en logs) pero Claude nunca recibía respuesta de `initialize`
+- Detectado y diagnosticado por **Gemini CLI** analizando los logs
 
 **Causa raíz:**
-FastMCP imprime por defecto un **banner decorativo en ASCII por `stdout`** al arrancar:
+FastMCP imprime por defecto un **banner ASCII decorativo por `stdout`** al arrancar.
+Claude Desktop usa **JSON-RPC estricto sobre stdout**: cualquier byte no-JSON rompe el
+protocolo y deja a Claude esperando indefinidamente sin mensaje de error.
+
 ```
 ╭────────────────────────────╮
-│   FastMCP Server v3.x      │
+│   FastMCP Server v3.x      │   ← esto va a stdout y destruye el canal JSON-RPC
 ╰────────────────────────────╯
 ```
-Claude Desktop se comunica con el servidor MCP mediante **JSON-RPC estricto sobre stdout**.
-Cualquier byte que no sea JSON válido en ese canal rompe el protocolo: Claude Desktop lo
-descarta, se desincroniza y se queda esperando indefinidamente. No hay reintentos ni
-mensajes de error claros — simplemente se cuelga.
 
 **La regla fundamental del transporte stdio MCP:**
-> stdout es un canal de comunicación binario exclusivo para JSON-RPC.
-> Ningún proceso MCP puede escribir nada más en stdout — ni logs, ni banners,
-> ni mensajes de bienvenida. Todo eso va a stderr.
+> `stdout` es un canal binario exclusivo para JSON-RPC.
+> Absolutamente nada más puede escribirse en él. Logs, banners y mensajes van a `stderr`.
 
 **Solución:**
 ```python
-# En main.py — CRÍTICO: NO eliminar este flag nunca
+# main.py — CRÍTICO: nunca eliminar este flag
 mcp.run(transport="stdio", show_banner=False)
 ```
 
-**Test de regresión añadido:**
-`TestStdioTransport::test_server_stdout_is_clean_on_startup` — lanza el proceso real
-del servidor y verifica que el **primer byte de stdout sea `{`** (JSON-RPC válido).
-Si una actualización futura de FastMCP cambia el comportamiento del banner, el test
-falla antes de llegar a Claude Desktop.
+**Test de regresión:** `TestStdioTransport::test_server_stdout_is_clean_on_startup`
+lanza el proceso real y verifica que el primer byte de stdout sea `{`.
+Si una actualización futura de FastMCP cambia el comportamiento, el test falla antes
+de llegar a Claude Desktop.
 
 ---
 
-### Bug 3 — Deadlock stdin: `execute_command` con Python devolvía vacío
-
-**Cuándo ocurrió:** Durante las pruebas en vivo del servidor ya conectado.
+### Bug 3 — Deadlock stdin: Python/pytest devolvían output vacío
 
 **Síntomas:**
-- Comandos simples (`Get-Date`, `where.exe`, `dir`) funcionaban perfectamente.
-- Cualquier comando que arrancara un proceso Python — incluido pytest — devolvía
-  **salida vacía** y eventualmente timeout.
-- En algunos casos Claude Desktop se colgaba completamente.
-- El proceso Python se veía en el gestor de tareas corriendo pero sin terminar nunca.
+- `Get-Date`, `where.exe`, `dir` → funcionaban perfectamente
+- Cualquier proceso Python (incluido pytest) → output vacío, timeout o cuelgue total
+- El proceso Python aparecía en el gestor de tareas corriendo pero sin terminar
 
 **Causa raíz:**
-Al lanzar subprocesos con `asyncio.create_subprocess_exec` sin especificar `stdin`,
-el proceso hijo **hereda el stdin del proceso padre** — que en este caso es el servidor
-MCP, cuyo stdin está conectado al canal JSON-RPC de Claude Desktop.
-
-Procesos como Python, pytest, Node.js y otros interpretes intentan **leer stdin** durante
-el arranque (para detectar si están en modo interactivo, cargar `sitecustomize.py`, etc.).
-Al hacerlo, bloquean esperando input que nunca llega — el canal está ocupado con tráfico
-MCP. Resultado: **deadlock completo**:
+Al lanzar subprocesos sin especificar `stdin`, el hijo **hereda el stdin del padre** —
+que en este caso es el canal JSON-RPC de Claude Desktop. Python y otros intérpretes
+leen stdin al arrancar para detectar modo interactivo. Al hacerlo, bloquean esperando
+input que nunca llega → deadlock en cascada:
 
 ```
 Claude Desktop → [JSON-RPC stdin] → Servidor MCP
                                          ↓
                                     asyncio.create_subprocess_exec
-                                         ↓
+                                         ↓ (sin stdin=DEVNULL)
                                     Python hijo hereda stdin MCP
                                          ↓
-                                    Python hijo lee stdin → BLOQUEO
+                                    Python lee stdin → BLOQUEO ETERNO
                                          ↓
                                     Servidor MCP espera al hijo → BLOQUEO
                                          ↓
@@ -390,46 +458,40 @@ proc = await asyncio.create_subprocess_exec(
 
 Aplicado en `execute_command` y `execute_command_streaming`.
 
-**Nota importante:** Las sesiones interactivas (`start_process`) usan `stdin=PIPE`
-deliberadamente — es lo que permite enviar input con `interact_with_process`.
-La diferencia es que en sesiones el stdin lo controla el servidor, no lo hereda
-del canal MCP.
+**Nota:** Las sesiones interactivas (`start_process`) usan `stdin=PIPE` deliberadamente
+— es lo que permite enviarles input con `interact_with_process`. La diferencia es que
+ahí el stdin lo gestiona el servidor, no lo hereda del canal MCP.
 
 ---
 
-## Arquitectura interna — Gestor de sesiones
+## Arquitectura — Gestor de sesiones
 
-El módulo `session_manager.py` implementa un `SessionManager` singleton que mantiene
-un registro `{pid: ProcessSession}` de todos los procesos activos.
+`session_manager.py` implementa un `SessionManager` singleton con un dict
+`{pid: ProcessSession}` por proceso activo.
 
 Cada `ProcessSession` contiene:
 - El objeto `asyncio.subprocess.Process`
-- Un `asyncio.Queue` donde se acumula todo el output del proceso
-- Un `asyncio.Task` que drena `stdout` en background y mete líneas en el Queue
-- Metadatos: comando, timestamp de inicio, líneas totales emitidas, estado
-
-El drenador de output corre como tarea asyncio independiente por cada sesión.
-`read_output` usa `asyncio.wait_for` con timeout para leer del Queue sin bloquear
-el event loop del servidor.
+- Un `asyncio.Queue` donde se acumula todo el output
+- Un `asyncio.Task` que drena `stdout` en background línea a línea
+- Metadatos: comando, timestamp de inicio, líneas emitidas, estado
 
 ```
 start_process("python -i")
-    │
-    ├── asyncio.create_subprocess_exec → Process(pid=4521, stdin=PIPE, stdout=PIPE)
-    ├── ProcessSession(pid=4521, queue=Queue(), ...)
-    ├── asyncio.create_task(drain_output(session))  ← corre en background
+    ├── create_subprocess_exec(stdin=PIPE, stdout=PIPE)
+    ├── ProcessSession(pid, queue=Queue())
+    ├── asyncio.create_task(drain_output(session))   ← background forever
     └── sessions.register(session)
 
-drain_output (Task corriendo en background):
+drain_output [Task en background]:
     async for line in process.stdout:
-        await session.output_queue.put(line)
-    await session.output_queue.put(None)  ← señal de fin
+        await queue.put(line)
+    await queue.put(None)   ← señal de fin de stream
 
-interact_with_process(4521, "print('hola')"):
+interact_with_process(pid, "print('hola')"):
     ├── process.stdin.write(b"print('hola')\n")
     ├── await process.stdin.drain()
     └── read_output(session, timeout=8s)
-            └── asyncio.wait_for(queue.get(), timeout=0.5s) × N
+            └── asyncio.wait_for(queue.get(), 0.5s) × N iteraciones
 ```
 
 ---
@@ -439,36 +501,31 @@ interact_with_process(4521, "print('hola')"):
 | Hash | Descripción |
 |------|-------------|
 | `6b36288` | Scaffold inicial: 10 tools, seguridad, 14 tests |
-| `a0b278e` | Fix: fnmatch para glob en `search_files` (14/14 → 15/15 tests) |
-| `69414d0` | Config: rutas reales de Edu, fix hatch build target en pyproject.toml |
-| `4172d29` | Chore: ignorar scripts auxiliares `_*.bat` y `_*.py` en git |
-| `b0914b0` | **Fix: `show_banner=False`** — banner FastMCP rompía JSON-RPC stdio |
-| `2e3e609` | **Fix: `stdin=DEVNULL`** — deadlock heredando stdin MCP en subprocesos |
-| `b2ba6a2` | Docs: README completo en castellano con bugs y roadmap |
-| `4c5691a` | **Feat: 18 tools** — sesiones interactivas + mkdir + move + multi-read |
+| `a0b278e` | Fix: fnmatch para glob en search_files → 15/15 tests |
+| `69414d0` | Config: rutas reales, fix hatch build target |
+| `4172d29` | Chore: ignorar scripts auxiliares _*.bat / _*.py |
+| `b0914b0` | **Fix: show_banner=False** — banner FastMCP rompía JSON-RPC |
+| `2e3e609` | **Fix: stdin=DEVNULL** — deadlock heredando stdin MCP |
+| `b2ba6a2` | Docs: README completo en castellano |
+| `4c5691a` | Feat: sesiones interactivas + mkdir/move/multi-read → 18 tools |
+| `6dbbdf3` | Docs: README con arquitectura, bugs y roadmap detallado |
+| `ecf9c2e` | **Feat: módulo SAP HANA Cloud** — hdbcli, 8 tools → 26 total |
 
 ---
 
 ## Roadmap
 
-### Pendiente de menor prioridad
-
-| Feature | Descripción |
-|---------|-------------|
-| `get_config` / `set_config_value` | Leer y modificar configuración en runtime sin reiniciar |
-| Audit log | Registrar cada operación: timestamp, tool, ruta, resultado |
-| Restricciones por tool | `allowed_directories` separado para terminal vs filesystem |
-| `copy_file` | Copiar ficheros (move_file ya existe) |
-| `start_search` async | Búsqueda en background con paginación de resultados (como DC original) |
-
-### Ideas propias (no en Desktop Commander original)
-
-| Idea | Descripción |
-|------|-------------|
-| Tools SAP | RFC ping, lista de transportes, estado de sistema vía pyrfc |
-| Tools astrología | Ejecutar cálculos pyswisseph, leer corpus VTTs, consultar AstroCompendium |
-| Modo multi-IA | HTTP + auth token para que Claude y Gemini usen el mismo servidor simultáneamente |
-| Clipboard | `clipboard_get` / `clipboard_set` para automatización de escritorio |
+| Feature | Prioridad |
+|---------|-----------|
+| Tests para módulo HANA (mock de hdbcli) | 🔴 Alta |
+| `get_config` / `set_config_value` en runtime | 🟡 Media |
+| Audit log con rotación | 🟡 Media |
+| `copy_file` | 🟡 Media |
+| `start_search` asíncrono con paginación | 🟡 Media |
+| Restricciones allowed_dirs por tool | 🟢 Baja |
+| Modo multi-IA: HTTP + auth token | 🟢 Baja |
+| Tools astrología (pyswisseph, VTTs) | 🟢 Baja |
+| Tools SAP adicionales (pyrfc, RFC ping) | 🟢 Baja |
 
 ---
 
