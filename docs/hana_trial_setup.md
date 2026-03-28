@@ -95,12 +95,13 @@ El fichero real esta en .gitignore — nunca subir credenciales al repo.
 | `hana_describe_table` | Estructura columnas, tipos, PKs | OK disponible |
 | `hana_get_row_count` | Cuenta filas sin full scan | OK disponible |
 | `hana_list_tables` | Tablas y vistas de un schema | OK disponible |
-| `hana_get_system_info` | Info sistema memoria/CPU | BUG - ver abajo |
+| `hana_get_system_info` | Info sistema memoria/CPU | OK fijado v2 |
 
-### Bug conocido: hana_get_system_info
+### Fix aplicado: hana_get_system_info
 
-Query usa columna `ACTIVE_STATUS` inexistente en HANA 2026.2.5.
-Pendiente fix en `core/tools/hana.py`.
+Corregida query que usaba columna `ACTIVE_STATUS` inexistente en HANA 2026.2.5.
+Reemplazada por `SYS.M_SYSTEM_OVERVIEW` compatible con todas las versiones.
+Commit: 344f9e7
 
 ---
 
@@ -138,7 +139,6 @@ Conexion exitosa a SAP HANA Cloud
 
 ## Pendientes
 
-- Fix bug hana_get_system_info (columna ACTIVE_STATUS)
 - Reiniciar Claude Desktop para activar env vars del config.json
 - Probar hana_execute_query con SELECT basico
 - Crear tabla de prueba en schema DBADMIN
