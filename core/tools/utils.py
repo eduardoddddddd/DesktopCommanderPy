@@ -7,7 +7,10 @@ security enforcement.
 """
 
 import logging
+import os
 import platform
+import re
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -129,12 +132,14 @@ def check_extension_allowed(
 def check_command_allowed(command: str, blocked_commands: list[str]) -> None:
     """Raise PermissionError if *command* matches any blocked pattern.
 
-    Matching is case-insensitive substring search so partial patterns work.
-    E.g., blocking "net user" also blocks "NET USER /add foo".
+    Uses word-boundary regex (case-insensitive) so short tokens like 'dd'
+    don't accidentally block 'add', 'address', 'hidden', 'adding', etc.
+    Multi-word patterns like 'net user' still match 'NET USER /add foo'.
     """
     cmd_lower = command.lower()
     for blocked in blocked_commands:
-        if blocked.lower() in cmd_lower:
+        pattern = r"\b" + re.escape(blocked.lower()) + r"\b"
+        if re.search(pattern, cmd_lower):
             raise PermissionError(
                 f"Command blocked by security policy: matched '{blocked}'.\n"
                 f"Command attempted: {command!r}"
@@ -164,3 +169,78 @@ def get_shell(config: dict) -> list[str]:
 def get_default_timeout(config: dict) -> int:
     """Return the configured default terminal timeout in seconds."""
     return config.get("terminal", {}).get("default_timeout_seconds", 30)
+
+
+# ---------------------------------------------------------------------------
+# Subprocess environment helpers
+# ---------------------------------------------------------------------------
+
+def build_subprocess_env(extra: dict[str, str] | None = None) -> dict[str, str]:
+    """Build an env dict suitable for subprocess execution.
+
+    Enriches PATH with Python-related directories so subprocesses can find
+    'python', 'python3', 'py', 'pip', etc. even when the parent process
+    was launched with a minimal PATH (e.g. from Claude Desktop).
+
+    Always sets PYTHONUTF8=1 and PYTHONIOENCODING=utf-8 to prevent
+    UnicodeEncodeError on Windows consoles using cp1252.
+
+    Args:
+        extra: Additional env vars to merge (these override os.environ).
+
+    Returns:
+        A copy of os.environ enriched with Python paths and UTF-8 settings.
+    """
+    env = os.environ.copy()
+
+    # UTF-8 everywhere — prevents UnicodeEncodeError on cp1252 consoles
+    env["PYTHONIOENCODING"] = "utf-8"
+    env["PYTHONUTF8"] = "1"
+
+    # Collect Python directories to prepend to PATH
+    python_dirs: list[str] = []
+
+    # 1. Current venv Scripts dir — has python.exe, pip.exe, etc.
+    venv_scripts = Path(sys.executable).parent
+    python_dirs.append(str(venv_scripts))
+
+    # 2. Base Python installation Scripts dir (outside venv)
+    try:
+        base_scripts = Path(sys.base_prefix) / "Scripts"
+        if base_scripts != venv_scripts:
+            python_dirs.append(str(base_scripts))
+    except Exception:
+        pass
+
+    # 3. Windows py.exe launcher — typically in C:\Windows
+    for candidate in [Path(r"C:\Windows"), Path(r"C:\Windows\System32")]:
+        if (candidate / "py.exe").exists():
+            python_dirs.append(str(candidate))
+            break
+
+    # 4. Common user-level Python install on Windows
+    try:
+        local_app = Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Python"
+        if local_app.exists():
+            for py_dir in sorted(local_app.iterdir(), reverse=True):
+                if py_dir.is_dir() and py_dir.name.startswith("Python"):
+                    python_dirs.append(str(py_dir))
+                    python_dirs.append(str(py_dir / "Scripts"))
+                    break
+    except Exception:
+        pass
+
+    # Prepend dirs not already present in PATH
+    current_path = env.get("PATH", "")
+    path_lower = current_path.lower()
+    for d in reversed(python_dirs):
+        if d.lower() not in path_lower:
+            current_path = d + os.pathsep + current_path
+            path_lower = current_path.lower()
+
+    env["PATH"] = current_path
+
+    if extra:
+        env.update(extra)
+
+    return env

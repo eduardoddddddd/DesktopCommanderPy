@@ -5,7 +5,7 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://python.org)
 [![MCP](https://img.shields.io/badge/protocolo-MCP-green.svg)](https://modelcontextprotocol.io)
 [![FastMCP](https://img.shields.io/badge/fastmcp-3.1.1-orange.svg)](https://github.com/jlowin/fastmcp)
-[![Tests](https://img.shields.io/badge/tests-15%2F15%20OK-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/tests-28%2F28%20OK-brightgreen.svg)]()
 [![Tools](https://img.shields.io/badge/tools-26-blueviolet.svg)]()
 [![Licencia: MIT](https://img.shields.io/badge/Licencia-MIT-yellow.svg)](LICENSE)
 
@@ -36,7 +36,7 @@ Construido como alternativa personal a [Desktop Commander](https://github.com/wo
 
 | Componente | Estado |
 |------------|--------|
-| Tests | ✅ 15/15 passing |
+| Tests | ✅ 28/28 passing |
 | Integración Claude Desktop | ✅ Conectado y verificado (2026-03-26) |
 | Protocolo MCP negociado | 2025-11-25 |
 | FastMCP | 3.1.1 |
@@ -338,6 +338,114 @@ Salida esperada: `15 passed in ~1.6s`
 
 ---
 
+## Guía operacional — patrones y limitaciones conocidas
+
+Sección de referencia rápida para uso desde Claude Desktop.
+
+---
+
+### P1 — `execute_command` no encuentra `python`, `python3` ni `cmd`
+
+**Síntoma:** `python: command not found` o similar al ejecutar comandos Python.
+
+**Causa:** Claude Desktop arranca con un PATH minimal de escritorio, no el PATH
+completo de la sesión de usuario. `execute_command` hereda ese PATH restringido.
+
+**Solución A (fix permanente, ya integrado):** `build_subprocess_env()` en `utils.py`
+enriquece automáticamente el PATH del subprocess con los directorios del venv activo,
+el Python base y el launcher `py.exe`. Desde la versión actual esto es transparente.
+
+**Solución B (si A falla):** usar `Desktop Commander:start_process` con `py` explícito:
+```
+Desktop Commander:start_process { command: "py script.py", timeout_ms: 25000 }
+```
+
+---
+
+### P2 — `C:/temp/` bloqueado para escritura
+
+**Causa:** `security_config.yaml` tiene una lista explícita de `allowed_directories`.
+`C:\temp` no está en ella, no es un bug.
+
+**Directorios permitidos en este sistema:**
+- `C:/Users/Edu/Documents` (y subdirectorios, incluido `ClaudeWork`)
+- `C:/Users/Edu/Desktop`
+- `C:/Users/Edu/Downloads`
+- `C:/Users/Edu/DesktopCommanderPy`
+- `C:/Users/Edu/VerbaSant`
+- `C:/Users/Edu/AstroExtracto`
+- `C:/Users/Edu/AstroCompendium`
+- `C:/Users/Edu/MetaAstrum`
+- `C:/Users/Edu/VTTs`
+- `C:/Users/Edu/astro_cartas`
+
+Destino por defecto recomendado: `C:/Users/Edu/Documents/`
+
+---
+
+### P3 — `Desktop Commander:write_file` (Node.js) bloquea la palabra `dd`
+
+**Causa:** El servidor Node.js Desktop Commander tiene su propio blacklist de
+comandos de shell. La cadena `dd` coincide como substring, bloqueando cualquier
+fichero cuyo contenido incluya esa secuencia (nombres de variable, paths, texto).
+
+**Solución:** usar `DesktopCommanderPy:write_file` para escribir ficheros con
+contenido arbitrario — no tiene ese filtro. Reservar `Desktop Commander:write_file`
+solo si DesktopCommanderPy no responde por permisos de path.
+
+---
+
+### P4 — Encoding: `UnicodeEncodeError` con caracteres especiales en Windows
+
+**Causa:** La consola de Windows usa cp1252 por defecto. Caracteres como `≤`, `°`,
+`→` causan `UnicodeEncodeError` si el script no fuerza UTF-8.
+
+**Solución A (preferida, ya integrada):** `build_subprocess_env()` fija
+`PYTHONUTF8=1` y `PYTHONIOENCODING=utf-8` en todos los subprocesos.
+
+**Solución B:** lanzar con `py -X utf8 script.py`.
+
+**Solución C:** añadir al inicio del script:
+```python
+import sys, io
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+```
+
+**Solución D (fallback):** evitar caracteres especiales en el output:
+usar `d` en vez de `°`, `<=` en vez de `≤`, `->` en vez de `→`.
+
+---
+
+### P5 — REPL interactivo frágil: no pegar funciones multilínea
+
+**Síntoma:** errores de indentación o sintaxis al enviar bloques de código
+al REPL (`py -i` + `interact_with_process`).
+
+**Causa:** el protocolo de sesiones interactivas no maneja bien los bloques
+multilínea — el REPL ve las líneas de forma fragmentada.
+
+**Solución:** **siempre escribir el script completo a fichero y ejecutarlo de
+una sola vez.** Nunca intentar pegar funciones o clases enteras en el REPL.
+
+Patrón correcto:
+```
+DesktopCommanderPy:write_file  → C:/Users/Edu/Documents/script.py
+Desktop Commander:start_process → py -X utf8 C:/Users/Edu/Documents/script.py
+```
+
+---
+
+### P6 — `present_files` solo funciona con rutas `/mnt/...` del contenedor Claude
+
+**Causa:** `present_files` genera enlaces de descarga solo para el filesystem
+interno del contenedor Claude (`/mnt/user-data/outputs/`). No puede crear
+enlaces para `C:\Users\Edu\...`.
+
+**Solución:** indicar al usuario la ruta local donde está guardado el fichero.
+No hay workaround disponible desde el servidor MCP.
+
+---
+
 ## 🐛 Bugs críticos resueltos — diario de guerra
 
 ### Bug 1 — `spawn uv ENOENT`: Claude Desktop no arrancaba
@@ -510,12 +618,82 @@ interact_with_process(pid, "print('hola')"):
 | `4c5691a` | Feat: sesiones interactivas + mkdir/move/multi-read → 18 tools |
 | `6dbbdf3` | Docs: README con arquitectura, bugs y roadmap detallado |
 | `ecf9c2e` | **Feat: módulo SAP HANA Cloud** — hdbcli, 8 tools → 26 total |
+| `(próximo)` | **Fix: word-boundary blacklist + build_subprocess_env + PATH fix → 28/28 tests** |
 
 ---
 
-## Roadmap
+### Bug 4 — Matching de substring en blacklist: `dd` bloqueaba `address`, `adding`, `hidden`…
 
-| Feature | Prioridad |
+**Detectado:** 28 de marzo de 2026.
+
+**Síntomas:**
+- `Desktop Commander:write_file` (Node.js) bloqueaba ficheros con contenido normal
+  que contenía la cadena `dd` (variables, paths, palabras)
+- Pero también el propio `check_command_allowed` de DesktopCommanderPy afectado:
+  comandos legítimos como `black --reformat .` eran bloqueados si contenían
+  subcadenas coincidentes con tokens de la blacklist
+
+**Causa raíz:**
+El matching era `blocked.lower() in cmd_lower` — búsqueda de substring pura.
+El token `"dd"` en `blocked_commands` coincidía en cualquier posición:
+
+```python
+# Antes del fix — INCORRECTO
+"dd" in "address"   # True → bloqueaba 'address'
+"dd" in "adding"    # True → bloqueaba 'adding'
+"format" in "reformat"  # True → bloqueaba '--reformat'
+```
+
+**Solución:**
+```python
+# Después del fix — word-boundary regex
+pattern = r"\b" + re.escape(blocked.lower()) + r"\b"
+re.search(pattern, "address")   # None → permitido ✓
+re.search(pattern, "dd if=...")  # Match → bloqueado ✓
+re.search(r"\bformat\b", "--reformat")  # None → permitido ✓
+re.search(r"\bformat\b", "format C:")   # Match → bloqueado ✓
+```
+
+Los patrones multi-palabra como `"net user"` siguen funcionando exactamente igual.
+
+---
+
+### Bug 5 — PATH minimal: subprocesos no encontraban `python`, `python3`, `pip`
+
+**Detectado:** 28 de marzo de 2026.
+
+**Síntomas:**
+- `execute_command("python script.py")` → `python: command not found`
+- `execute_command("pip install X")` → error similar
+- `Get-Date`, `dir`, `where.exe` → funcionaban sin problema
+
+**Causa raíz:**
+Claude Desktop se lanza como aplicación de escritorio de Windows, **no** desde
+una terminal de usuario. El PATH que hereda es el PATH del sistema, sin las
+entradas que el instalador de Python añade al PATH del usuario:
+
+```
+PATH de terminal usuario:  C:\Users\Edu\AppData\Local\Programs\Python\Python312\Scripts;...
+PATH heredado por Claude:  C:\Windows\System32;C:\Windows;...  (sin Python)
+```
+
+**Solución — `build_subprocess_env()` en `utils.py`:**
+```python
+def build_subprocess_env(extra=None):
+    env = os.environ.copy()
+    env["PYTHONUTF8"] = "1"
+    env["PYTHONIOENCODING"] = "utf-8"
+    # Prepend: venv Scripts, base Python Scripts, C:\Windows (py.exe), LOCALAPPDATA Python
+    ...
+    return env
+```
+
+Aplicado en `execute_command` y `execute_command_streaming`. Los subprocesos
+ahora reciben el PATH completo independientemente de cómo arrancó Claude Desktop.
+
+---
+
+## Roadmap| Feature | Prioridad |
 |---------|-----------|
 | Tests para módulo HANA (mock de hdbcli) | 🔴 Alta |
 | `get_config` / `set_config_value` en runtime | 🟡 Media |

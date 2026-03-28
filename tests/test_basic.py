@@ -215,3 +215,91 @@ class TestStdioTransport:
         parsed = json.loads(stripped)
         assert parsed.get("jsonrpc") == "2.0", "Response is not JSON-RPC 2.0"
         assert "result" in parsed, "Expected 'result' in initialize response"
+
+
+# ---------------------------------------------------------------------------
+# Word-boundary command security tests
+# ---------------------------------------------------------------------------
+
+class TestCommandSecurityWordBoundary:
+    """
+    Regression tests for the word-boundary fix in check_command_allowed.
+
+    Before the fix, the blocked token 'dd' would match any command containing
+    'dd' as a substring: 'address', 'adding', 'hidden', 'odd', etc.
+    After the fix, only whole-word occurrences are blocked.
+    """
+
+    def test_dd_alone_is_blocked(self):
+        """'dd if=... of=...' must still be blocked."""
+        with pytest.raises(PermissionError):
+            utils_module.check_command_allowed("dd if=/dev/zero of=/dev/sda", ["dd"])
+
+    def test_dd_in_address_is_allowed(self):
+        """'address' contains 'dd' but must NOT be blocked."""
+        utils_module.check_command_allowed("echo address", ["dd"])  # no raise
+
+    def test_dd_in_adding_is_allowed(self):
+        """'adding' contains 'dd' but must NOT be blocked."""
+        utils_module.check_command_allowed("git adding files", ["dd"])  # no raise
+
+    def test_dd_in_odd_is_allowed(self):
+        """'odd' ends with 'dd' but must NOT be blocked."""
+        utils_module.check_command_allowed("echo odd number", ["dd"])  # no raise
+
+    def test_dd_in_hidden_is_allowed(self):
+        """'hidden' contains 'dd' but must NOT be blocked."""
+        utils_module.check_command_allowed("ls hidden/", ["dd"])  # no raise
+
+    def test_format_in_reformat_is_allowed(self):
+        """'reformat' contains 'format' but must NOT be blocked."""
+        utils_module.check_command_allowed("black --line-length 100 --reformat .", ["format"])  # no raise
+
+    def test_format_alone_is_blocked(self):
+        """'format C:' must still be blocked."""
+        with pytest.raises(PermissionError):
+            utils_module.check_command_allowed("format C:", ["format"])
+
+    def test_net_user_multiword_blocked(self):
+        """Multi-word pattern 'net user' must still match."""
+        with pytest.raises(PermissionError):
+            utils_module.check_command_allowed("NET USER /add badguy", ["net user"])
+
+
+# ---------------------------------------------------------------------------
+# build_subprocess_env tests
+# ---------------------------------------------------------------------------
+
+class TestBuildSubprocessEnv:
+    """Tests for the PATH enrichment and UTF-8 env helper."""
+
+    def test_utf8_vars_set(self):
+        env = utils_module.build_subprocess_env()
+        assert env.get("PYTHONUTF8") == "1"
+        assert env.get("PYTHONIOENCODING") == "utf-8"
+
+    def test_extra_vars_merged(self):
+        env = utils_module.build_subprocess_env({"MY_VAR": "hello"})
+        assert env.get("MY_VAR") == "hello"
+
+    def test_extra_vars_override(self):
+        """Caller-supplied vars take precedence over os.environ defaults."""
+        env = utils_module.build_subprocess_env({"PYTHONUTF8": "0"})
+        assert env.get("PYTHONUTF8") == "0"
+
+    def test_path_contains_python_executable(self):
+        """PATH must include the directory holding the current python.exe."""
+        import sys
+        env = utils_module.build_subprocess_env()
+        venv_scripts = str(Path(sys.executable).parent).lower()
+        path_lower = env.get("PATH", "").lower()
+        assert venv_scripts in path_lower, (
+            f"Expected venv Scripts dir '{venv_scripts}' in PATH.\nPATH={env.get('PATH')}"
+        )
+
+    def test_returns_dict_copy_not_mutation(self):
+        """Repeated calls return independent dicts."""
+        env1 = utils_module.build_subprocess_env({"X": "1"})
+        env2 = utils_module.build_subprocess_env({"X": "2"})
+        assert env1["X"] == "1"
+        assert env2["X"] == "2"

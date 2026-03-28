@@ -10,11 +10,11 @@ Platform: auto-detects Windows (PowerShell) vs Linux/macOS (bash/zsh).
 
 import asyncio
 import logging
-import os
 from pathlib import Path
 from typing import Annotated, AsyncGenerator
 
 from core.tools.utils import (
+    build_subprocess_env,
     check_command_allowed,
     get_default_timeout,
     get_shell,
@@ -67,10 +67,7 @@ async def execute_command(
     timeout = timeout_seconds if timeout_seconds > 0 else get_default_timeout(_cfg())
     cwd = working_directory if working_directory else str(Path.home())
 
-    env = os.environ.copy()
-    env.update(environment)
-    env["PYTHONIOENCODING"] = "utf-8"
-    env["PYTHONUTF8"] = "1"
+    env = build_subprocess_env(environment or {})
 
     logger.info("Executing command: %r (cwd=%s, timeout=%ds)", command, cwd, timeout)
 
@@ -113,6 +110,7 @@ async def execute_command_streaming(
     command: Annotated[str, "Shell command to execute with streaming output."],
     working_directory: Annotated[str, "Working directory for the command."] = "",
     timeout_seconds: Annotated[int, "Overall timeout in seconds. 0 = use configured default."] = 0,
+    environment: Annotated[dict[str, str], "Additional environment variables as a dict."] = {},
 ) -> str:
     """Execute a long-running command and return output incrementally.
 
@@ -128,9 +126,7 @@ async def execute_command_streaming(
     timeout = timeout_seconds if timeout_seconds > 0 else get_default_timeout(_cfg())
     cwd = working_directory if working_directory else str(Path.home())
 
-    env = os.environ.copy()
-    env["PYTHONIOENCODING"] = "utf-8"
-    env["PYTHONUTF8"] = "1"
+    env = build_subprocess_env(environment or {})
 
     logger.info("Streaming command: %r", command)
 
