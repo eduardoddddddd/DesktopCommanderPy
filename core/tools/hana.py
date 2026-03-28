@@ -1,4 +1,4 @@
-"""
+﻿"""
 DesktopCommanderPy - Tools de gestión SAP HANA Cloud (hdbcli).
 
 Permite conectar, consultar y administrar una instancia de SAP HANA Cloud
@@ -416,49 +416,21 @@ async def hana_get_system_info() -> str:
         cursor = conn.cursor()
         sections = []
 
-        # Info base de datos
-        cursor.execute("""
-            SELECT DATABASE_NAME, HOST, START_TIME, VERSION, ACTIVE_STATUS
-            FROM SYS.M_DATABASE
-        """)
+        # System overview (compatible HANA 2026.x)
+        cursor.execute("SELECT SECTION, NAME, STATUS, VALUE FROM SYS.M_SYSTEM_OVERVIEW ORDER BY SECTION, NAME")
         rows = cursor.fetchall()
-        sections.append("=== BASE DE DATOS ===")
+        sections.append("=== SYSTEM OVERVIEW ===")
+        current_section = None
         for r in rows:
-            sections.append(
-                f"  Nombre: {r[0]}  Host: {r[1]}  Estado: {r[4]}\n"
-                f"  Arranque: {r[2]}  Versión: {r[3]}"
-            )
+            if r[0] != current_section:
+                current_section = r[0]
+                sections.append(f'  [{current_section}]')
+            status_str = f' [{r[2]}]' if r[2] else ''
+            sections.append(f'    {r[1]}: {r[3]}{status_str}')
 
-        # Memoria
-        cursor.execute("""
-            SELECT
-                ROUND(TOTAL_MEMORY_USED_SIZE / 1073741824.0, 2) AS USED_GB,
-                ROUND(ALLOCATION_LIMIT / 1073741824.0, 2) AS LIMIT_GB,
-                ROUND(100.0 * TOTAL_MEMORY_USED_SIZE / NULLIF(ALLOCATION_LIMIT,0), 1) AS PCT_USED
-            FROM SYS.M_HOST_RESOURCE_UTILIZATION
-        """)
-        row = cursor.fetchone()
-        if row:
-            sections.append(
-                f"\n=== MEMORIA ===\n"
-                f"  Usada: {row[0]} GB / Límite: {row[1]} GB  ({row[2]}% usado)"
-            )
-
-        # Conexiones activas
         cursor.execute("SELECT COUNT(*) FROM SYS.M_CONNECTIONS WHERE CONNECTION_STATUS = 'RUNNING'")
         active_conn = cursor.fetchone()[0]
         sections.append(f"\n=== CONEXIONES ACTIVAS: {active_conn} ===")
-
-        # Alertas activas (si las hay)
-        try:
-            cursor.execute("""
-                SELECT COUNT(*) FROM SYS.M_SYSTEM_OVERVIEW
-                WHERE SECTION = 'Alerts' AND VALUE != '0'
-            """)
-            alert_count = cursor.fetchone()[0]
-            sections.append(f"\n=== ALERTAS ACTIVAS: {alert_count} ===")
-        except Exception:
-            pass   # No disponible en todas las ediciones
 
         cursor.close()
         conn.close()
