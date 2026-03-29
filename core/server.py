@@ -7,7 +7,6 @@ the various tool modules. Add new tool modules here as the project grows.
 
 import logging
 import platform
-from pathlib import Path
 
 from fastmcp import FastMCP
 
@@ -47,17 +46,13 @@ from core.tools.process import (
     list_processes,
     kill_process,
 )
-from core.tools.utils import load_security_config
+from core.tools.config_tools import (
+    get_config,
+    set_config_value,
+)
 
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Security config (loaded once at startup)
-# ---------------------------------------------------------------------------
-_CONFIG_PATH = Path(__file__).parent.parent / "config" / "security_config.yaml"
-security_config = load_security_config(_CONFIG_PATH)
-
-# ---------------------------------------------------------------------------
 # FastMCP server instance
 # ---------------------------------------------------------------------------
 mcp = FastMCP(
@@ -83,6 +78,8 @@ mcp.tool()(get_file_info)
 mcp.tool()(create_directory)
 mcp.tool()(move_file)
 mcp.tool()(read_multiple_files)
+mcp.tool()(get_config)
+mcp.tool()(set_config_value)
 
 # ---------------------------------------------------------------------------
 # Register tools - terminal

@@ -13,6 +13,8 @@ import pytest
 # Patch allowed_directories to temp dir for tests
 import core.tools.filesystem as fs_module
 import core.tools.utils as utils_module
+import core.runtime_config as runtime_module
+import core.tools.config_tools as config_tools_module
 
 
 # ---------------------------------------------------------------------------
@@ -22,22 +24,26 @@ import core.tools.utils as utils_module
 @pytest.fixture
 def tmp_allowed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """Redirect all security checks to a temp directory."""
-    monkeypatch.setattr(fs_module, "_security_config", {
-        "security": {
-            "allowed_directories": [str(tmp_path)],
-            "blocked_commands": ["format", "rm -rf /"],
-            "max_file_size_bytes": 10 * 1024 * 1024,
-            "max_read_lines": 2000,
-            "write_blocked_extensions": [".exe", ".dll"],
-        },
-        "terminal": {
-            "windows_shell": "powershell.exe",
-            "linux_shell": "/bin/bash",
-            "macos_shell": "/bin/zsh",
-            "default_timeout_seconds": 10,
-            "max_output_chars": 100_000,
-        },
-    })
+    monkeypatch.setattr(
+        runtime_module,
+        "_CONFIG",
+        runtime_module.RuntimeConfig(
+            security=runtime_module.SecuritySettings(
+                allowed_directories=[str(tmp_path)],
+                blocked_commands=["format", "rm -rf /"],
+                max_file_size_bytes=10 * 1024 * 1024,
+                max_read_lines=2000,
+                write_blocked_extensions=[".exe", ".dll"],
+            ),
+            terminal=runtime_module.TerminalSettings(
+                windows_shell="powershell.exe",
+                linux_shell="/bin/bash",
+                macos_shell="/bin/zsh",
+                default_timeout_seconds=10,
+                max_output_chars=100_000,
+            ),
+        ),
+    )
     return tmp_path
 
 
@@ -52,6 +58,14 @@ class TestPathSecurity:
             [str(tmp_allowed)],
         )
         assert result == (tmp_allowed / "test.txt").resolve()
+
+    def test_relative_path_uses_cwd(self, tmp_allowed: Path):
+        result = utils_module.resolve_and_validate_path(
+            "nested/test.txt",
+            [str(tmp_allowed)],
+            cwd=str(tmp_allowed),
+        )
+        assert result == (tmp_allowed / "nested" / "test.txt").resolve()
 
     def test_path_outside_allowed_raises(self, tmp_allowed: Path):
         with pytest.raises(PermissionError):
@@ -131,6 +145,13 @@ class TestFilesystemTools:
         result = await fs_module.search_files(str(tmp_allowed), "*.py")
         assert "foo.py" in result
         assert "bar.txt" not in result
+
+    async def test_search_files_case_sensitive(self, tmp_allowed: Path):
+        (tmp_allowed / "Foo.py").write_text("print('hello')")
+        result_sensitive = await fs_module.search_files(str(tmp_allowed), "foo.py", case_sensitive=True)
+        result_insensitive = await fs_module.search_files(str(tmp_allowed), "foo.py", case_sensitive=False)
+        assert "No files found" in result_sensitive
+        assert "Foo.py" in result_insensitive
 
     async def test_get_file_info(self, tmp_allowed: Path):
         target = tmp_allowed / "info_test.txt"
@@ -303,3 +324,58 @@ class TestBuildSubprocessEnv:
         env2 = utils_module.build_subprocess_env({"X": "2"})
         assert env1["X"] == "1"
         assert env2["X"] == "2"
+
+
+# ---------------------------------------------------------------------------
+# config tools tests
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+class TestConfigTools:
+    async def test_get_config_exposes_typed_entries(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        cfg_path = tmp_path / "security_config.yaml"
+        cfg_path.write_text(
+            """
+security:
+  allowed_directories:
+    - "C:/Temp"
+terminal:
+  default_timeout_seconds: 15
+logging:
+  level: "INFO"
+""".strip(),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(runtime_module, "_CONFIG_PATH", cfg_path)
+        monkeypatch.setattr(runtime_module, "_CONFIG", None)
+        monkeypatch.setattr(config_tools_module, "_CONFIG_PATH", cfg_path)
+
+        payload = await config_tools_module.get_config()
+        entries = {entry["key"]: entry for entry in payload["entries"]}
+
+        assert entries["security.allowed_directories"]["valueType"] == "array"
+        assert entries["terminal.default_timeout_seconds"]["valueType"] == "number"
+        assert entries["logging.log_to_file"]["valueType"] == "boolean"
+
+    async def test_set_config_value_persists_and_reloads(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        cfg_path = tmp_path / "security_config.yaml"
+        cfg_path.write_text(
+            """
+security:
+  allowed_directories: []
+terminal:
+  default_timeout_seconds: 30
+logging:
+  level: "INFO"
+""".strip(),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(runtime_module, "_CONFIG_PATH", cfg_path)
+        monkeypatch.setattr(runtime_module, "_CONFIG", None)
+        monkeypatch.setattr(config_tools_module, "_CONFIG_PATH", cfg_path)
+
+        result = await config_tools_module.set_config_value("terminal.default_timeout_seconds", "45")
+        assert result["value"] == 45
+
+        reloaded = runtime_module.reload_runtime_config()
+        assert reloaded.terminal.default_timeout_seconds == 45

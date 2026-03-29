@@ -36,13 +36,13 @@ Construido como alternativa personal a [Desktop Commander](https://github.com/wo
 
 | Componente | Estado |
 |------------|--------|
-| Tests | ✅ 28/28 passing |
+| Tests | ✅ 32/32 passing |
 | Integración Claude Desktop | ✅ Conectado y verificado (2026-03-26) |
 | Protocolo MCP negociado | 2025-11-25 |
 | FastMCP | 3.1.1 |
 | Python | 3.12.10 |
 | hdbcli (HANA) | 2.28.17 |
-| Tools disponibles | **26** |
+| Tools disponibles | **28** |
 
 ---
 
@@ -57,7 +57,7 @@ DesktopCommanderPy/
 │   ├── hana_config.yaml             # Credenciales HANA (NO en git, ver .gitignore)
 │   └── hana_config.yaml.example     # Plantilla de configuración HANA
 ├── core/
-│   ├── server.py                    # FastMCP + registro de las 26 tools
+│   ├── server.py                    # FastMCP + registro de las 28 tools
 │   └── tools/
 │       ├── filesystem.py            # 9 tools de sistema de archivos
 │       ├── terminal.py              # 2 tools de terminal
@@ -164,9 +164,9 @@ Para añadir las credenciales HANA directamente aquí (opción recomendada):
 
 ---
 
-## Las 26 tools MCP disponibles
+## Las 28 tools MCP disponibles
 
-### Filesystem (9 tools)
+### Filesystem + Config (11 tools)
 
 | Tool | Descripción |
 |------|-------------|
@@ -179,6 +179,8 @@ Para añadir las credenciales HANA directamente aquí (opción recomendada):
 | `create_directory` | mkdir -p sandbox-aware. |
 | `move_file` | Mueve/renombra dentro del sandbox. |
 | `read_multiple_files` | Lee N ficheros en una llamada. |
+| `get_config` | Devuelve la configuración runtime activa con tipos (`string`, `number`, `boolean`, `array`). |
+| `set_config_value` | Actualiza y persiste claves de configuración runtime sin editar YAML a mano. |
 
 ### Terminal (2 tools)
 
@@ -327,7 +329,7 @@ hana_execute_ddl("CREATE TABLE TEST (ID INT)", confirm=True)
 .venv\Scripts\pytest.exe tests/ -v
 ```
 
-Salida esperada: `15 passed in ~1.6s`
+Salida esperada: `32 passed in ~2-3s`
 
 | Suite | Tests | Qué cubre |
 |-------|-------|-----------|
@@ -335,6 +337,7 @@ Salida esperada: `15 passed in ~1.6s`
 | `TestCommandSecurity` | 3 | Blacklist de comandos peligrosos |
 | `TestFilesystemTools` | 7 | read/write/edit/list/search/info |
 | `TestStdioTransport` | 1 | Integridad del canal JSON-RPC (crítico) |
+| `TestConfigTools` | 2 | Config runtime tipada y persistencia |
 
 ---
 
@@ -380,6 +383,50 @@ Desktop Commander:start_process { command: "py script.py", timeout_ms: 25000 }
 - `C:/Users/Edu/astro_cartas`
 
 Destino por defecto recomendado: `C:/Users/Edu/Documents/`
+
+---
+
+### P2b — Paths relativos, `~` y Windows mezclan mal separadores
+
+**Estado actual:** resuelto en la capa runtime nueva.
+
+Ahora todas las tools principales pasan por un helper común que:
+- expande `~`
+- resuelve rutas relativas contra el `cwd`
+- normaliza separadores y casing en Windows
+- usa `resolve(strict=False)` antes de validar sandbox
+
+Eso evita muchos falsos negativos típicos de Windows cuando una ruta entra como:
+`~/algo.txt`, `.\archivo.py`, `C:/Users/Edu/...` o `C:\Users\Edu\...`
+
+Implementación: `core/tools/utils.py → resolve_and_validate_path()`
+
+---
+
+### P2c — Config stringly-typed: `true/false`, números y arrays acababan mal
+
+**Estado actual:** resuelto con configuración runtime central.
+
+Antes, cada módulo podía releer YAML y varias flags acababan tratándose como texto.
+Ahora existe una única fuente de verdad:
+
+- `core/runtime_config.py`
+- `core/tools/config_tools.py`
+
+Y se exponen dos tools MCP nuevas:
+
+```text
+get_config()
+set_config_value(key, value)
+```
+
+Los tipos se preservan como tipos Python reales:
+- `bool`
+- `int`
+- `str`
+- `list[str]`
+
+Esto hace el servidor mucho más predecible y evita bugs por valores tipo `"false"` o `"45"` tratados como strings.
 
 ---
 
@@ -618,7 +665,7 @@ interact_with_process(pid, "print('hola')"):
 | `4c5691a` | Feat: sesiones interactivas + mkdir/move/multi-read → 18 tools |
 | `6dbbdf3` | Docs: README con arquitectura, bugs y roadmap detallado |
 | `ecf9c2e` | **Feat: módulo SAP HANA Cloud** — hdbcli, 8 tools → 26 total |
-| `(próximo)` | **Fix: word-boundary blacklist + build_subprocess_env + PATH fix → 28/28 tests** |
+| `(actual)` | **Runtime config central + tools get/set config + path/env robustos → 32/32 tests** |
 
 ---
 

@@ -10,28 +10,21 @@ Platform: auto-detects Windows (PowerShell) vs Linux/macOS (bash/zsh).
 
 import asyncio
 import logging
-from pathlib import Path
-from typing import Annotated, AsyncGenerator
+from typing import Annotated
 
+from core.runtime_config import get_runtime_config
 from core.tools.utils import (
     build_subprocess_env,
     check_command_allowed,
     get_default_timeout,
     get_shell,
-    load_security_config,
+    resolve_working_directory,
 )
 
 logger = logging.getLogger(__name__)
 
-_CONFIG_PATH = Path(__file__).parent.parent.parent / "config" / "security_config.yaml"
-_security_config: dict | None = None
-
-
 def _cfg() -> dict:
-    global _security_config
-    if _security_config is None:
-        _security_config = load_security_config(_CONFIG_PATH)
-    return _security_config
+    return get_runtime_config().to_dict()
 
 
 def _blocked() -> list[str]:
@@ -65,7 +58,7 @@ async def execute_command(
 
     shell_args = get_shell(_cfg())
     timeout = timeout_seconds if timeout_seconds > 0 else get_default_timeout(_cfg())
-    cwd = working_directory if working_directory else str(Path.home())
+    cwd = resolve_working_directory(working_directory)
 
     env = build_subprocess_env(environment or {})
 
@@ -124,7 +117,7 @@ async def execute_command_streaming(
 
     shell_args = get_shell(_cfg())
     timeout = timeout_seconds if timeout_seconds > 0 else get_default_timeout(_cfg())
-    cwd = working_directory if working_directory else str(Path.home())
+    cwd = resolve_working_directory(working_directory)
 
     env = build_subprocess_env(environment or {})
 

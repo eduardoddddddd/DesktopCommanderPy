@@ -7,30 +7,21 @@ All operations are sandboxed via utils.resolve_and_validate_path().
 
 import fnmatch
 import logging
-import os
 import re
 from pathlib import Path
 from typing import Annotated
 
+from core.runtime_config import get_runtime_config
 from core.tools.utils import (
     check_extension_allowed,
-    load_security_config,
     resolve_and_validate_path,
 )
 
 logger = logging.getLogger(__name__)
 
-# Lazy-load config reference (set by server.py after startup)
-_security_config: dict | None = None
-
-
 def _cfg() -> dict:
-    """Return the active security config, loading defaults if needed."""
-    global _security_config
-    if _security_config is None:
-        _cfg_path = Path(__file__).parent.parent.parent / "config" / "security_config.yaml"
-        _security_config = load_security_config(_cfg_path)
-    return _security_config
+    """Return the active runtime config as a plain dict."""
+    return get_runtime_config().to_dict()
 
 
 def _allowed() -> list[str]:
@@ -156,8 +147,8 @@ async def edit_file_diff(
 
 async def list_directory(
     path: Annotated[str, "Absolute path to the directory to list."],
-    recursive: Annotated[bool, "If True, list subdirectories recursively. Default False."] = False,
-    max_depth: Annotated[int, "Maximum recursion depth when recursive=True. Default 3."] = 3,
+    recursive: Annotated[bool, "Set to true to list subdirectories recursively. Default false."] = False,
+    max_depth: Annotated[int, "Maximum recursion depth when recursive=true. Default 3."] = 3,
 ) -> str:
     """List the contents of a directory with file sizes and types.
 
@@ -215,7 +206,7 @@ async def search_files(
     root: Annotated[str, "Absolute path to directory to search in."],
     pattern: Annotated[str, "Glob pattern (e.g. '*.py') or substring to match in file names."],
     content_search: Annotated[str, "Optional text to search inside file contents. Empty = skip content search."] = "",
-    case_sensitive: Annotated[bool, "Case-sensitive matching. Default False."] = False,
+    case_sensitive: Annotated[bool, "Set to true for case-sensitive matching. Default false."] = False,
     max_results: Annotated[int, "Maximum number of results to return. Default 100."] = 100,
 ) -> str:
     """Search for files by name pattern and/or content substring.
@@ -245,11 +236,13 @@ async def search_files(
         name = file_path.name
         if any(c in pattern for c in "*?["):
             # Glob pattern
-            name_match = fnmatch.fnmatch(name.lower() if not case_sensitive else name,
-                                         pattern.lower() if not case_sensitive else pattern)
+            name_match = fnmatch.fnmatch(
+                name if case_sensitive else name.lower(),
+                pattern if case_sensitive else pattern.lower(),
+            )
         else:
             # Plain substring match
-            name_match = (pattern.lower() in name.lower()) if not case_sensitive else (pattern in name)
+            name_match = pattern in name if case_sensitive else pattern.lower() in name.lower()
 
         if not name_match:
             continue

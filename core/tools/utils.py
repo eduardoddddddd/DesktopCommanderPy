@@ -14,56 +14,14 @@ import sys
 from pathlib import Path
 from typing import Any
 
-import yaml
+from core.runtime_config import get_runtime_config
 
 logger = logging.getLogger(__name__)
 
 
-# ---------------------------------------------------------------------------
-# Config loader
-# ---------------------------------------------------------------------------
-
-def load_security_config(config_path: Path) -> dict[str, Any]:
-    """Load and return the security configuration from YAML.
-
-    Falls back to a safe minimal default if the file is missing or invalid.
-    """
-    defaults: dict[str, Any] = {
-        "security": {
-            "allowed_directories": [],
-            "blocked_commands": [],
-            "max_file_size_bytes": 10 * 1024 * 1024,
-            "max_read_lines": 2000,
-            "write_blocked_extensions": [".exe", ".dll", ".sys"],
-        },
-        "terminal": {
-            "windows_shell": "powershell.exe",
-            "linux_shell": "/bin/bash",
-            "macos_shell": "/bin/zsh",
-            "default_timeout_seconds": 30,
-            "max_output_chars": 500_000,
-        },
-        "logging": {"level": "INFO"},
-    }
-    try:
-        with open(config_path, "r", encoding="utf-8") as f:
-            loaded = yaml.safe_load(f)
-        # Merge with defaults so missing keys don't cause KeyErrors
-        _deep_merge(defaults, loaded or {})
-        logger.info("Security config loaded from %s", config_path)
-    except FileNotFoundError:
-        logger.warning("Config not found at %s — using defaults", config_path)
-    except yaml.YAMLError as exc:
-        logger.error("YAML parse error in config: %s — using defaults", exc)
-    return defaults
-
-def _deep_merge(base: dict, override: dict) -> None:
-    """Recursively merge *override* into *base* in-place."""
-    for key, value in override.items():
-        if key in base and isinstance(base[key], dict) and isinstance(value, dict):
-            _deep_merge(base[key], value)
-        else:
-            base[key] = value
+def load_security_config(config_path: Path | None = None) -> dict[str, Any]:
+    """Compatibility wrapper around the central runtime config loader."""
+    return get_runtime_config().to_dict()
 
 
 # ---------------------------------------------------------------------------
@@ -73,6 +31,7 @@ def _deep_merge(base: dict, override: dict) -> None:
 def resolve_and_validate_path(
     path: str | Path,
     allowed_dirs: list[str],
+    cwd: str | Path | None = None,
 ) -> Path:
     """Resolve *path* to an absolute Path and verify it's inside an allowed dir.
 
@@ -90,20 +49,44 @@ def resolve_and_validate_path(
     if not path:
         raise ValueError("Path must not be empty.")
 
-    resolved = Path(path).resolve()
+    raw = str(path).strip()
+    expanded = os.path.expanduser(raw)
+    base_dir = Path(cwd).expanduser() if cwd else Path.cwd()
+
+    candidate = Path(expanded)
+    if not candidate.is_absolute():
+        candidate = base_dir / candidate
+
+    resolved = candidate.resolve(strict=False)
+    if resolved.exists():
+        try:
+            resolved = resolved.resolve(strict=True)
+        except OSError:
+            pass
 
     if not allowed_dirs:
-        # No restrictions configured — allow everything (dev mode)
+        # No restrictions configured - allow everything (dev mode)
         logger.debug("No allowed_dirs configured; access to %s permitted", resolved)
         return resolved
 
+    resolved_norm = os.path.normcase(os.path.normpath(str(resolved)))
+
     for allowed in allowed_dirs:
-        allowed_resolved = Path(allowed).resolve()
-        try:
-            resolved.relative_to(allowed_resolved)
-            return resolved  # Path is inside this allowed dir
-        except ValueError:
-            continue
+        allowed_expanded = Path(os.path.expanduser(str(allowed).strip()))
+        allowed_resolved = allowed_expanded.resolve(strict=False)
+        allowed_norm = os.path.normcase(os.path.normpath(str(allowed_resolved)))
+
+        if resolved_norm == allowed_norm:
+            return resolved
+
+        if resolved_norm.startswith(allowed_norm + os.sep):
+            return resolved
+
+        if os.name == "nt":
+            drive_root = os.path.splitdrive(allowed_norm)[0]
+            if allowed_norm in {drive_root, drive_root + os.sep} and drive_root:
+                if resolved_norm.startswith(drive_root):
+                    return resolved
 
     raise PermissionError(
         f"Access denied: '{resolved}' is outside all allowed directories.\n"
@@ -169,6 +152,14 @@ def get_shell(config: dict) -> list[str]:
 def get_default_timeout(config: dict) -> int:
     """Return the configured default terminal timeout in seconds."""
     return config.get("terminal", {}).get("default_timeout_seconds", 30)
+
+
+def resolve_working_directory(working_directory: str | Path | None = None) -> str:
+    """Resolve a working directory to an absolute path string."""
+    if not working_directory:
+        return str(Path.home())
+    expanded = os.path.expanduser(str(working_directory).strip())
+    return str(Path(expanded).resolve(strict=False))
 
 
 # ---------------------------------------------------------------------------

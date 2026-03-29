@@ -14,29 +14,22 @@ Permite:
 
 import asyncio
 import logging
-import os
-from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated
 
+from core.runtime_config import get_runtime_config
 from core.tools.session_manager import ProcessSession, sessions
 from core.tools.utils import (
+    build_subprocess_env,
     check_command_allowed,
     get_default_timeout,
     get_shell,
-    load_security_config,
+    resolve_working_directory,
 )
 
 logger = logging.getLogger(__name__)
 
-_CONFIG_PATH = Path(__file__).parent.parent.parent / "config" / "security_config.yaml"
-_security_config: dict | None = None
-
-
 def _cfg() -> dict:
-    global _security_config
-    if _security_config is None:
-        _security_config = load_security_config(_CONFIG_PATH)
-    return _security_config
+    return get_runtime_config().to_dict()
 
 
 def _blocked() -> list[str]:
@@ -64,10 +57,8 @@ async def start_process(
     check_command_allowed(command, _blocked())
 
     shell_args = get_shell(_cfg())
-    cwd = working_directory or str(Path.home())
-    env = os.environ.copy()
-    env["PYTHONUTF8"] = "1"
-    env["PYTHONIOENCODING"] = "utf-8"
+    cwd = resolve_working_directory(working_directory)
+    env = build_subprocess_env()
 
     logger.info("start_process: %r (cwd=%s)", command, cwd)
 
